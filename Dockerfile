@@ -39,7 +39,7 @@ RUN cd /opt && \
   mkdir openMVG_Build && \
   cd openMVG_Build && \
   cmake -DCMAKE_BUILD_TYPE=RELEASE . ../openMVG/src/ -DCMAKE_INSTALL_PREFIX=/opt/openMVG_install && \
-  make install
+  make
 
 
 #OpenMVS build
@@ -49,4 +49,5 @@ RUN ln -s /usr/lib/x86_64-linux-gnu/libGLU.so.1.3.1 /usr/lib/x86_64-linux-gnu/li
   mkdir /opt/openMVS_Build && \
   cd /opt/openMVS_Build && \
   cmake . ../openMVS -DCMAKE_BUILD_TYPE=RELEASE -DVCG_DIR="/opt/vcglib" -DCERES_DIR="/usr/local/share/Ceres" -DOpenCV_CAN_BREAK_BINARY_COMPATIBILITY=OFF -DOpenMVG_DIR:STRING="/opt/openMVG_install/share/openMVG/cmake/" && \
-  make
+  make && \
+  cp ./bin/* /usr/bin

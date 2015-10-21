@@ -39,7 +39,7 @@ RUN cd /opt && \
   mkdir openMVG_Build && \
   cd openMVG_Build && \
   cmake -DCMAKE_BUILD_TYPE=RELEASE . ../openMVG/src/ -DCMAKE_INSTALL_PREFIX=/opt/openMVG_install && \
-  make
+  make install
 
 
 #OpenMVS build

@@ -47,7 +47,7 @@ ADD . /opt/openMVS
 # Patch VCG
 RUN cp /opt/openMVS/build/clean.patch /opt/vcglib/vcg/complex/algorithms && \
   cd /opt/vcglib/vcg/complex/algorithms && \
-  patch clean.h < clean.patch
+  patch < clean.patch
 
 #OpenMVS build
 RUN ln -s /usr/lib/x86_64-linux-gnu/libGLU.so.1.3.1 /usr/lib/x86_64-linux-gnu/libGLU.so && \ 

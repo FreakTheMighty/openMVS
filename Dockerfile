@@ -32,9 +32,6 @@ RUN git clone https://ceres-solver.googlesource.com/ceres-solver && \
 
 # Install VCG
 RUN cd /opt && svn checkout svn://svn.code.sf.net/p/vcg/code/trunk/vcglib vcglib
-ADD build/clean.patch /opt/vcglib/vcg/complex/algorithms
-RUN cd /opt/vcglib/vcg/complex/algorithms && \
-  patch clean.h < clean.patch
 
 #OpenMVG build
 RUN cd /opt && \
@@ -45,8 +42,14 @@ RUN cd /opt && \
   make install
 
 
-#OpenMVS build
 ADD . /opt/openMVS
+
+# Patch VCG
+RUN cp /opt/openMVS/build/clean.patch /opt/vcglib/vcg/complex/algorithms && \
+  cd /opt/vcglib/vcg/complex/algorithms && \
+  patch clean.h < clean.patch
+
+#OpenMVS build
 RUN ln -s /usr/lib/x86_64-linux-gnu/libGLU.so.1.3.1 /usr/lib/x86_64-linux-gnu/libGLU.so && \ 
   ln -s /usr/lib/x86_64-linux-gnu/mesa/libGL.so.1  /usr/lib/x86_64-linux-gnu/libGL.so && \ 
   mkdir /opt/openMVS_Build && \

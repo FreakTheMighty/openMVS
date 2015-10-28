@@ -31,7 +31,7 @@ RUN git clone https://ceres-solver.googlesource.com/ceres-solver && \
   cd ..
 
 # Install VCG
-RUN cd /opt && svn checkout svn://svn.code.sf.net/p/vcg/code/trunk/vcglib vcglib
+RUN cd /opt && svn checkout svn://svn.code.sf.net/p/vcg/code/trunk/vcglib@5560 vcglib
 
 #OpenMVG build
 RUN cd /opt && \

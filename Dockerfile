@@ -18,8 +18,7 @@ RUN apt-get update && apt-get install -y \
   libxi-dev  \ 
   libxrandr-dev \ 
   libxxf86vm-dev \ 
-  libxxf86vm1 \ 
-  subversion
+  libxxf86vm1
 
 # Install Ceres
 RUN git clone https://ceres-solver.googlesource.com/ceres-solver && \
@@ -31,7 +30,7 @@ RUN git clone https://ceres-solver.googlesource.com/ceres-solver && \
   cd ..
 
 # Install VCG
-RUN cd /opt && svn checkout svn://svn.code.sf.net/p/vcg/code/trunk/vcglib vcglib
+RUN cd /opt && git clone https://github.com/cdcseacave/VCG.git vcglib
 
 #OpenMVG build
 RUN cd /opt && \

@@ -532,10 +532,10 @@ bool PLY::read(ISTREAM* f)
 	STRISTREAM sfp(fp);
 	char **words = get_words(sfp, &nwords, &orig_line);
 	if (words == NULL)
-		return (NULL);
+		return false;
 	if (!equal_strings (words[0], "ply")) {
 		free(words);
-		return (NULL);
+		return false;
 	}
 	free(words);
 
@@ -543,7 +543,7 @@ bool PLY::read(ISTREAM* f)
 	while ((words = get_words(sfp, &nwords, &orig_line)) != NULL) {
 		if (equal_strings(words[0], "format")) {
 			if (nwords != 3)
-				return (NULL);
+				return false;
 			if (equal_strings(words[1], "ascii"))
 				this->file_type = ASCII;
 			else if (equal_strings(words[1], "binary_big_endian"))
@@ -551,7 +551,7 @@ bool PLY::read(ISTREAM* f)
 			else if (equal_strings(words[1], "binary_little_endian"))
 				this->file_type = BINARY_LE;
 			else
-				return (NULL);
+				return false;
 			this->version = (float)atof(words[2]);
 		}
 		else if (equal_strings(words[0], "element"))
@@ -1114,7 +1114,7 @@ void PLY::ascii_get_element(uint8_t* elem_ptr)
 
 			/* allocate space for an array of items and store a ptr to the array */
 			const int list_count(ValueType2Type<int>(val, prop->count_external));
-			char **store_array((char**)(elem_data + prop->offset));
+			char **store_array = (char**)(elem_data + prop->offset);
 			if (list_count == 0) {
 				if (store_it)
 					*store_array = NULL;
@@ -1212,7 +1212,7 @@ void PLY::binary_get_element(uint8_t* elem_ptr)
 			/* allocate space for an array of items and store a ptr to the array */
 			const int list_count(ValueType2Type<int>(val, prop->count_external));
 			const int item_size(ply_type_size[prop->internal_type]);
-			char **store_array((char**)(elem_data + prop->offset));
+			char **store_array = (char**)(elem_data + prop->offset);
 			if (list_count == 0) {
 				if (store_it)
 					*store_array = NULL;
@@ -1298,7 +1298,7 @@ char** PLY::get_words(STRISTREAM& sfp, int *nwords, char **orig_line)
 
 	int max_words = 10;
 	int num_words = 0;
-	char *ptr,*ptr2;
+	char *ptr, *ptr2;
 
 	char **words = (char **)malloc(sizeof (char *) * max_words);
 
@@ -1316,21 +1316,23 @@ char** PLY::get_words(STRISTREAM& sfp, int *nwords, char **orig_line)
 	/*  null character at the end of the string) */
 	if (str[len-1] == '\r')
 		--len;
-	str[len] = ' ';
-	str[len+1] = '\0';
+	str[len] = '\n';
 
-	for (ptr = str, ptr2 = str_copy; *ptr != '\0'; ptr++, ptr2++) {
-		*ptr2 = *ptr;
-		if (*ptr == '\t') {
+	for (ptr = str, ptr2 = str_copy; ; ptr++, ptr2++) {
+		switch (*ptr) {
+		case '\t':
 			*ptr = ' ';
 			*ptr2 = ' ';
-		}
-		else if (*ptr == '\n') {
-			*ptr = ' ';
-			*ptr2 = '\0';
 			break;
+		case '\n':
+			*ptr = ' ';
+			*(ptr+1) = *ptr2 = '\0';
+			goto EXIT_LOOP;
+		default:
+			*ptr2 = *ptr;
 		}
 	}
+	EXIT_LOOP:
 
 	/* find the words in the line */
 	ptr = str;

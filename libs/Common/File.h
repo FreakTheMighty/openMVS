@@ -13,6 +13,13 @@
 
 #include "Streams.h"
 
+#ifdef _MSC_VER
+#include <io.h>
+#else
+#include <unistd.h>
+#define _taccess access
+#endif
+
 
 // D E F I N E S ///////////////////////////////////////////////////
 
@@ -55,6 +62,13 @@ public:
 		WRITE = GENERIC_WRITE,
 		RW = READ | WRITE
 	} FMACCESS;
+
+	typedef enum FMCHECKACCESS_TYPE {
+		CA_EXIST	= 0, // existence
+		CA_WRITE	= 2, // write
+		CA_READ		= 4, // read
+		CA_RW		= CA_READ | CA_WRITE
+	} FMCHECKACCESS;
 
 	File() : h(INVALID_HANDLE_VALUE) {
 		#ifdef _DEBUG
@@ -236,16 +250,17 @@ public:
 		return (SetFileAttributes(aFileName, attribs) != FALSE);
 	}
 
-	static void deleteFile(LPCTSTR aFileName) { ::DeleteFile(aFileName); };
+	static void deleteFile(LPCTSTR aFileName) { ::DeleteFile(aFileName); }
 	static bool renameFile(LPCTSTR source, LPCTSTR target) {
 		if (!::MoveFile(source, target)) {
 			// Can't move, try copy/delete...
-			if (!CopyFile(source, target, FALSE))
+			if (!::CopyFile(source, target, FALSE))
 				return false;
 			deleteFile(source);
 		}
 		return true;
 	}
+	static bool copyFile(LPCTSTR source, LPCTSTR target) { return ::CopyFile(source, target, FALSE) == TRUE; }
 
 	static size_f_t getSize(LPCTSTR aFileName) {
 		const HANDLE fh = ::CreateFile(aFileName, FILE_READ_ATTRIBUTES, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_FLAG_NO_BUFFERING, NULL);
@@ -319,6 +334,14 @@ public:
 		WRITE = 0x02,
 		RW = READ | WRITE,
 	} FMACCESS;
+
+	typedef enum FMCHECKACCESS_TYPE {
+		CA_EXIST	= F_OK, // existence
+		CA_WRITE	= W_OK, // write
+		CA_READ		= R_OK, // read
+		CA_RW		= R_OK | W_OK,
+		CA_EXEC		= X_OK, // execute
+	} FMCHECKACCESS;
 
 	File() : h(-1) {
 		#ifdef _DEBUG
@@ -445,8 +468,18 @@ public:
 		return fsync(h);
 	}
 
-	static void deleteFile(LPCTSTR aFileName) { ::unlink(aFileName); };
-	static void renameFile(LPCTSTR source, LPCTSTR target) { ::rename(source, target); };
+	static void deleteFile(LPCTSTR aFileName) { ::remove(aFileName); }
+	static bool renameFile(LPCTSTR source, LPCTSTR target) { return ::rename(source, target) == 0; }
+	static bool copyFile(LPCTSTR source, LPCTSTR target) {
+		std::ifstream src(source, std::ios::binary);
+		if (!src.is_open())
+			return false;
+		std::ofstream dst(target, std::ios::binary);
+		if (!dst.is_open())
+			return false;
+		dst << src.rdbuf();
+		return true;
+	}
 
 	static size_f_t getSize(LPCTSTR aFileName) {
 		struct stat s;
@@ -456,6 +489,8 @@ public:
 	}
 
 #endif // _MSC_VER
+
+	static bool access(LPCTSTR aFileName, int mode=CA_EXIST) { return ::_taccess(aFileName, mode) == 0; }
 
 	template <class VECTOR>
 	inline size_t write(const VECTOR& arr) {

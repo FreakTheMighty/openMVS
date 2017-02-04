@@ -31,6 +31,7 @@
 
 #include "Common.h"
 #include "Scene.h"
+#define _USE_OPENCV
 #include "Interface.h"
 
 using namespace MVS;
@@ -44,17 +45,23 @@ using namespace MVS;
 
 // S T R U C T S ///////////////////////////////////////////////////
 
+void Scene::Release()
+{
+	platforms.Release();
+	images.Release();
+	pointcloud.Release();
+	mesh.Release();
+}
+
+
 bool Scene::LoadInterface(const String & fileName)
 {
+	TD_TIMER_STARTD();
 	Interface obj;
 
-	#ifdef _USE_BOOST
 	// serialize in the current state
-	if (!SerializeLoad(obj, fileName, ARCHIVE_BINARY_ZIP))
+	if (!ARCHIVE::SerializeLoad(obj, fileName))
 		return false;
-	#else
-	return false;
-	#endif
 
 	// import platforms and cameras
 	ASSERT(!obj.platforms.empty());
@@ -85,6 +92,7 @@ bool Scene::LoadInterface(const String & fileName)
 
 	// import images
 	nCalibratedImages = 0;
+	size_t nTotalPixels(0);
 	ASSERT(!obj.images.empty());
 	images.Reserve((uint32_t)obj.images.size());
 	for (Interface::ImageArr::const_iterator it=obj.images.begin(); it!=obj.images.end(); ++it) {
@@ -95,8 +103,10 @@ bool Scene::LoadInterface(const String & fileName)
 		Util::ensureUnifySlash(imageData.name);
 		imageData.name = MAKE_PATH_FULL(WORKING_FOLDER_FULL, imageData.name);
 		imageData.poseID = image.poseID;
-		if (imageData.poseID == NO_ID)
+		if (imageData.poseID == NO_ID) {
+			DEBUG_EXTRA("warning: uncalibrated image '%s'", image.name.c_str());
 			continue;
+		}
 		imageData.platformID = image.platformID;
 		imageData.cameraID = image.cameraID;
 		#if 1
@@ -109,6 +119,7 @@ bool Scene::LoadInterface(const String & fileName)
 		imageData.camera.ComposeP();
 		#endif
 		++nCalibratedImages;
+		nTotalPixels += imageData.width * imageData.height;
 		DEBUG_EXTRA("Image loaded %3u: %s", ID, Util::getFileFullName(imageData.name).c_str());
 	}
 	if (images.GetSize() < 2)
@@ -128,9 +139,14 @@ bool Scene::LoadInterface(const String & fileName)
 			views.Resize((PointCloud::ViewArr::IDX)vertex.views.size());
 			PointCloud::WeightArr& weights = pointcloud.pointWeights[i];
 			weights.Resize((PointCloud::ViewArr::IDX)vertex.views.size());
+			CLISTDEF0(PointCloud::ViewArr::IDX) indices(views.GetSize());
+			std::iota(indices.Begin(), indices.End(), 0);
+			std::sort(indices.Begin(), indices.End(), [&](IndexArr::Type i0, IndexArr::Type i1) -> bool {
+				return vertex.views[i0].imageID < vertex.views[i1].imageID;
+			});
 			ASSERT(vertex.views.size() >= 2);
 			views.ForEach([&](PointCloud::ViewArr::IDX v) {
-				const Interface::Vertex::View& view = vertex.views[v];
+				const Interface::Vertex::View& view = vertex.views[indices[v]];
 				views[v] = view.imageID;
 				weights[v] = view.confidence;
 				if (view.confidence != 0)
@@ -148,11 +164,19 @@ bool Scene::LoadInterface(const String & fileName)
 			pointcloud.colors.CopyOf((const Pixel8U*)&obj.verticesColor[0].c, obj.vertices.size());
 		}
 	}
+
+	DEBUG_EXTRA("Scene loaded from interface format (%s):\n"
+				"\t%u images (%u calibrated) with a total of %.2f MPixels (%.2f MPixels/image)\n"
+				"\t%u points, %u vertices, %u faces",
+				TD_TIMER_GET_FMT().c_str(),
+				images.GetSize(), nCalibratedImages, (double)nTotalPixels/(1024.0*1024.0), (double)nTotalPixels/(1024.0*1024.0*nCalibratedImages),
+				pointcloud.points.GetSize(), mesh.vertices.GetSize(), mesh.faces.GetSize());
 	return true;
 } // LoadInterface
 
 bool Scene::SaveInterface(const String & fileName) const
 {
+	TD_TIMER_STARTD();
 	Interface obj;
 
 	// export platforms
@@ -197,7 +221,7 @@ bool Scene::SaveInterface(const String & fileName) const
 		const PointCloud::Point& point = pointcloud.points[i];
 		const PointCloud::ViewArr& views = pointcloud.pointViews[i];
 		MVS::Interface::Vertex& vertex = obj.vertices[i];
-		ASSERT(sizeof(MVS::Interface::Real) == sizeof(point.x));
+		ASSERT(sizeof(vertex.X.x) == sizeof(point.x));
 		vertex.X = point;
 		vertex.views.resize(views.GetSize());
 		views.ForEach([&](PointCloud::ViewArr::IDX v) {
@@ -223,17 +247,25 @@ bool Scene::SaveInterface(const String & fileName) const
 		}
 	}
 
-	#ifdef _USE_BOOST
 	// serialize out the current state
-	return SerializeSave(obj, fileName, ARCHIVE_BINARY_ZIP);
-	#else
-	return false;
-	#endif
+	if (!ARCHIVE::SerializeSave(obj, fileName))
+		return false;
+
+	DEBUG_EXTRA("Scene saved to interface format (%s):\n"
+				"\t%u images (%u calibrated)\n"
+				"\t%u points, %u vertices, %u faces",
+				TD_TIMER_GET_FMT().c_str(),
+				images.GetSize(), nCalibratedImages,
+				pointcloud.points.GetSize(), mesh.vertices.GetSize(), mesh.faces.GetSize());
+	return true;
 } // SaveInterface
 /*----------------------------------------------------------------*/
 
 bool Scene::Load(const String& fileName)
 {
+	TD_TIMER_STARTD();
+	Release();
+
 	#ifdef _USE_BOOST
 	// open the input stream
 	std::ifstream fs(fileName, std::ios::in | std::ios::binary);
@@ -267,13 +299,21 @@ bool Scene::Load(const String& fileName)
 		return false;
 	// init images
 	nCalibratedImages = 0;
+	size_t nTotalPixels(0);
 	FOREACH(ID, images) {
 		Image& imageData = images[ID];
 		if (imageData.poseID == NO_ID)
 			continue;
 		imageData.UpdateCamera(platforms);
 		++nCalibratedImages;
+		nTotalPixels += imageData.width * imageData.height;
 	}
+	DEBUG_EXTRA("Scene loaded (%s):\n"
+				"\t%u images (%u calibrated) with a total of %.2f MPixels (%.2f MPixels/image)\n"
+				"\t%u points, %u vertices, %u faces",
+				TD_TIMER_GET_FMT().c_str(),
+				images.GetSize(), nCalibratedImages, (double)nTotalPixels/(1024.0*1024.0), (double)nTotalPixels/(1024.0*1024.0*nCalibratedImages),
+				pointcloud.points.GetSize(), mesh.vertices.GetSize(), mesh.faces.GetSize());
 	return true;
 	#else
 	return false;
@@ -282,6 +322,7 @@ bool Scene::Load(const String& fileName)
 
 bool Scene::Save(const String& fileName, ARCHIVE_TYPE type) const
 {
+	TD_TIMER_STARTD();
 	#ifdef _USE_BOOST
 	// open the output stream
 	std::ofstream fs(fileName, std::ios::out | std::ios::binary);
@@ -299,7 +340,15 @@ bool Scene::Save(const String& fileName, ARCHIVE_TYPE type) const
 	const uint64_t nReserved = 0;
 	fs.write((const char*)&nReserved, sizeof(uint64_t));
 	// serialize out the current state
-	return SerializeSave(*this, fs, type);
+	if (!SerializeSave(*this, fs, type))
+		return false;
+	DEBUG_EXTRA("Scene saved (%s):\n"
+				"\t%u images (%u calibrated)\n"
+				"\t%u points, %u vertices, %u faces",
+				TD_TIMER_GET_FMT().c_str(),
+				images.GetSize(), nCalibratedImages,
+				pointcloud.points.GetSize(), mesh.vertices.GetSize(), mesh.faces.GetSize());
+	return true;
 	#else
 	return false;
 	#endif
@@ -340,6 +389,7 @@ bool Scene::SelectNeighborViews(uint32_t ID, IndexArr& points, unsigned nMinView
 	imageData.avgDepth = 0;
 	FOREACH(idx, pointcloud.points) {
 		const PointCloud::ViewArr& views = pointcloud.pointViews[idx];
+		ASSERT(views.IsSorted());
 		if (views.FindFirst(ID) == PointCloud::ViewArr::NO_INDEX)
 			continue;
 		// store this point
@@ -395,6 +445,7 @@ bool Scene::SelectNeighborViews(uint32_t ID, IndexArr& points, unsigned nMinView
 		ASSERT(pointsA.IsEmpty() && pointsB.IsEmpty());
 		FOREACHPTR(pIdx, points) {
 			const PointCloud::ViewArr& views = pointcloud.pointViews[*pIdx];
+			ASSERT(views.IsSorted());
 			ASSERT(views.FindFirst(ID) != PointCloud::ViewArr::NO_INDEX);
 			if (views.FindFirst(IDB) == PointCloud::ViewArr::NO_INDEX)
 				continue;
@@ -452,4 +503,66 @@ bool Scene::FilterNeighborViews(ViewScoreArr& neighbors, float fMinArea, float f
 		neighbors.Resize(nMaxViews);
 	return !neighbors.IsEmpty();
 } // FilterNeighborViews
+/*----------------------------------------------------------------*/
+
+
+// export all estimated cameras in a MeshLab MLP project as raster layers
+bool Scene::ExportCamerasMLP(const String& fileName, const String& fileNameScene) const
+{
+	static const char mlp_header[] =
+		"<!DOCTYPE MeshLabDocument>\n"
+		"<MeshLabProject>\n"
+		" <MeshGroup>\n"
+		"  <MLMesh label=\"%s\" filename=\"%s\">\n"
+		"   <MLMatrix44>\n"
+		"1 0 0 0 \n"
+		"0 1 0 0 \n"
+		"0 0 1 0 \n"
+		"0 0 0 1 \n"
+		"   </MLMatrix44>\n"
+		"  </MLMesh>\n"
+		" </MeshGroup>\n";
+	static const char mlp_raster[] =
+		"  <MLRaster label=\"%s\">\n"
+		"   <VCGCamera TranslationVector=\"%0.6g %0.6g %0.6g 1\""
+		" LensDistortion=\"%0.6g %0.6g\""
+		" ViewportPx=\"%u %u\""
+		" PixelSizeMm=\"1 %0.4f\""
+		" FocalMm=\"%0.4f\""
+		" CenterPx=\"%0.4f %0.4f\""
+		" RotationMatrix=\"%0.6g %0.6g %0.6g 0 %0.6g %0.6g %0.6g 0 %0.6g %0.6g %0.6g 0 0 0 0 1\"/>\n"
+		"   <Plane semantic=\"\" fileName=\"%s\"/>\n"
+		"  </MLRaster>\n";
+
+	Util::ensureDirectory(fileName);
+	File f(fileName, File::WRITE, File::CREATE | File::TRUNCATE);
+
+	// write MLP header containing the referenced PLY file
+	f.print(mlp_header, Util::getFileName(fileNameScene).c_str(), MAKE_PATH_REL(WORKING_FOLDER_FULL, fileNameScene).c_str());
+
+	// write the raster layers
+	f <<  " <RasterGroup>\n";
+	FOREACH(i, images) {
+		const Image& imageData = images[i];
+		// skip invalid, uncalibrated or discarded images
+		if (!imageData.IsValid())
+			continue;
+		const Camera& camera = imageData.camera;
+		f.print(mlp_raster,
+			Util::getFileName(imageData.name).c_str(),
+			-camera.C.x, -camera.C.y, -camera.C.z,
+			0, 0,
+			imageData.width, imageData.height,
+			camera.K(1,1)/camera.K(0,0), camera.K(0,0),
+			camera.K(0,2), camera.K(1,2),
+			 camera.R(0,0),  camera.R(0,1),  camera.R(0,2),
+			-camera.R(1,0), -camera.R(1,1), -camera.R(1,2),
+			-camera.R(2,0), -camera.R(2,1), -camera.R(2,2),
+			MAKE_PATH_REL(WORKING_FOLDER_FULL, imageData.name).c_str()
+		);
+	}
+	f << " </RasterGroup>\n</MeshLabProject>\n";
+
+	return true;
+} // ExportCamerasMLP
 /*----------------------------------------------------------------*/

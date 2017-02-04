@@ -6,10 +6,12 @@
 #   have any side effects other than defining the functions and macros.
 
 INCLUDE(CheckCXXCompilerFlag)
+INCLUDE(CheckIncludeFile)
 
 # BUILD_SHARED_LIBS is a standard CMake variable, but we declare it here to
 # make it prominent in the GUI.
 OPTION(BUILD_SHARED_LIBS "Build shared libraries (DLLs)" OFF)
+OPTION(BUILD_SHARED_LIBS_FULL "Expose all functionality when built as shared libraries (DLLs)" OFF)
 OPTION(BUILD_EXCEPTIONS_ENABLED "Enable support for exceptions" ON)
 OPTION(BUILD_RTTI_ENABLED "Enable support run-time type information" ON)
 OPTION(BUILD_STATIC_RUNTIME "Link staticaly the run-time library" ON)
@@ -117,10 +119,11 @@ macro(GetOperatingSystemArchitectureBitness)
 		execute_process(COMMAND ${CMAKE_CXX_COMPILER} --version
 					  OUTPUT_VARIABLE CMAKE_FLG_GCC_VERSION_FULL
 					  OUTPUT_STRIP_TRAILING_WHITESPACE)
-
-		execute_process(COMMAND ${CMAKE_CXX_COMPILER} -v
-					  ERROR_VARIABLE CMAKE_FLG_GCC_INFO_FULL
-					  OUTPUT_STRIP_TRAILING_WHITESPACE)
+		if(CMAKE_FLG_GCC_VERSION_FULL STREQUAL "")
+			execute_process(COMMAND ${CMAKE_CXX_COMPILER} -v
+						  ERROR_VARIABLE CMAKE_FLG_GCC_VERSION_FULL
+						  OUTPUT_STRIP_TRAILING_WHITESPACE)
+		endif()
 
 		# Typical output in CMAKE_FLG_GCC_VERSION_FULL: "c+//0 (whatever) 4.2.3 (...)"
 		# Look for the version number
@@ -235,7 +238,7 @@ macro(add_option variable description value)
     endif()
   endforeach()
   unset(__varname)
-  if("${__condition}" STREQUAL "")
+  if(__condition STREQUAL "")
     set(__condition 2 GREATER 1)
   endif()
 
@@ -423,8 +426,8 @@ macro(optimize_default_compiler_settings)
 		set(CMAKE_REQUIRED_FLAGS -std=c++11)
 		add_extra_compiler_option(-std=c++11)
 		if(CLANG)
-			add_extra_compiler_option(-stdlib=libc++)
 			set(CMAKE_EXE_LINKER_FLAGS "-stdlib=libc++")
+			add_extra_compiler_option(-stdlib=libc++)
 		endif()
 	endif()
 
@@ -450,6 +453,7 @@ macro(optimize_default_compiler_settings)
 	  add_extra_compiler_option(-Wstrict-prototypes)
 	  add_extra_compiler_option(-Winit-self)
 	  add_extra_compiler_option(-Wsign-promo)
+	  add_extra_compiler_option(-Wreorder)
 
 	  if(ENABLE_NOISY_WARNINGS)
 		add_extra_compiler_option(-Wshadow)
@@ -635,10 +639,13 @@ macro(optimize_default_compiler_settings)
 	endif()
 
 	# Extra link libs if the user selects building static libs:
-	if(NOT BUILD_SHARED_LIBS AND CMAKE_COMPILER_IS_GNUCXX AND NOT ANDROID)
-	  # Android does not need these settings because they are already set by toolchain file
-	  set(BUILD_EXTRA_LINKER_LIBS ${BUILD_EXTRA_LINKER_LIBS} stdc++)
-	  set(BUILD_EXTRA_FLAGS "-fPIC ${BUILD_EXTRA_FLAGS}")
+	# Android does not need these settings because they are already set by toolchain file
+	if(CMAKE_COMPILER_IS_GNUCXX AND NOT ANDROID)
+		if(BUILD_SHARED_LIBS)
+			set(BUILD_EXTRA_FLAGS "${BUILD_EXTRA_FLAGS} -fPIC")
+		else()
+			set(BUILD_EXTRA_LINKER_LIBS "${BUILD_EXTRA_LINKER_LIBS} stdc++")
+		endif()
 	endif()
 
 	# Add user supplied extra options (optimization, etc...)
@@ -686,6 +693,7 @@ macro(optimize_default_compiler_settings)
 		string(REPLACE "/Zm1000" "" ${flags} "${${flags}}")
 	  endforeach()
 	endif()
+	CHECK_INCLUDE_FILE("inttypes.h" HAVE_INTTYPES_H)
 endmacro()
 
 
@@ -770,18 +778,42 @@ macro(ConfigCompilerAndLinker)
 
   if (BUILD_EXCEPTIONS_ENABLED)
     set(cxx_exception_support "${CMAKE_CXX_FLAGS} ${cxx_base_flags} ${cxx_exception_flags}")
+    set(_HAS_EXCEPTIONS TRUE)
   else()
     set(cxx_exception_support "${CMAKE_CXX_FLAGS} ${cxx_base_flags} ${cxx_no_exception_flags}")
   endif()
 
   if (BUILD_RTTI_ENABLED)
     set(cxx_rtti_support "")
+    set(_HAS_RTTI TRUE)
   else()
     set(cxx_rtti_support "${cxx_no_rtti_flags}")
   endif()
   
   SET(cxx_default "${cxx_exception_support} ${cxx_rtti_support}" CACHE PATH "Common compile CXX flags")
   SET(c_default "${CMAKE_C_FLAGS} ${cxx_base_flags}" CACHE PATH "Common compile C flags")
+endmacro()
+
+# Initialize variables needed for a library type project.
+macro(ConfigLibrary)
+	# Offer the user the choice of overriding the installation directories
+	set(INSTALL_LIB_DIR "lib/${PROJECT_NAME}" CACHE PATH "Installation directory for libraries")
+	set(INSTALL_BIN_DIR "bin/${PROJECT_NAME}" CACHE PATH "Installation directory for executables")
+	set(INSTALL_INCLUDE_DIR "include/${PROJECT_NAME}" CACHE PATH "Installation directory for header files")
+	if(WIN32 AND NOT CYGWIN)
+		set(DEF_INSTALL_CMAKE_DIR "CMake")
+	else()
+		set(DEF_INSTALL_CMAKE_DIR "lib/CMake/${PROJECT_NAME}")
+	endif()
+	set(INSTALL_CMAKE_DIR ${DEF_INSTALL_CMAKE_DIR} CACHE PATH "Installation directory for CMake files")
+	 
+	# Make relative paths absolute (needed later on)
+	foreach(p LIB BIN INCLUDE CMAKE)
+		set(var INSTALL_${p}_DIR)
+		if(NOT IS_ABSOLUTE "${${var}}")
+			set(${var} "${CMAKE_INSTALL_PREFIX}/${${var}}")
+		endif()
+	endforeach()
 endmacro()
 
 # Defines the main libraries.  User tests should link
@@ -791,7 +823,7 @@ function(cxx_library_with_type_no_pch name folder type cxx_flags)
   # ARGN refers to additional arguments after 'cxx_flags'.
   add_library("${name}" ${type} ${ARGN})
   set_target_properties("${name}" PROPERTIES COMPILE_FLAGS "${cxx_flags}")
-  if (BUILD_SHARED_LIBS OR type STREQUAL "SHARED")
+  if ((BUILD_SHARED_LIBS AND NOT type STREQUAL "STATIC") OR type STREQUAL "SHARED")
     set_target_properties("${name}" PROPERTIES COMPILE_DEFINITIONS "_USRDLL")
   else()
     set_target_properties("${name}" PROPERTIES COMPILE_DEFINITIONS "_LIB")

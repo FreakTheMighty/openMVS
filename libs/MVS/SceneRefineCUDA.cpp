@@ -2063,7 +2063,7 @@ public:
 	CUDA::MemDevice smoothGrad1;
 	CUDA::MemDevice smoothGrad2;
 
-	static const int HalfSize = 2; // half window size used to compute ZNCC
+	enum { HalfSize = 2 }; // half window size used to compute ZNCC
 };
 
 MeshRefineCUDA::MeshRefineCUDA(Scene& _scene, unsigned _nAlternatePair, float _weightRegularity, float _ratioRigidityElasticity, unsigned _nResolutionLevel, unsigned _nMinResolution, unsigned nMaxViews)
@@ -2107,7 +2107,7 @@ MeshRefineCUDA::~MeshRefineCUDA()
 
 bool MeshRefineCUDA::InitKernels(int device)
 {
-	COMPILE_TIME_ASSERT(sizeof(CameraCUDA) == 176);
+	STATIC_ASSERT(sizeof(CameraCUDA) == 176);
 
 	// initialize CUDA device if needed
 	if (CUDA::devices.IsEmpty() && CUDA::initDevice(device) != CUDA_SUCCESS)
@@ -2194,10 +2194,11 @@ bool MeshRefineCUDA::InitImages(float scale, float sigma)
 		// load and init image
 		unsigned level(nResolutionLevel);
 		const unsigned imageSize(imageData.RecomputeMaxResolution(level, nMinResolution));
-		if ((imageData.image.empty() || MAXF(imageData.width,imageData.height) != imageSize) && FAILED(imageData.ReloadImage(imageSize))) {
+		if ((imageData.image.empty() || MAXF(imageData.width,imageData.height) != imageSize) && !imageData.ReloadImage(imageSize)) {
 			#ifdef MESHCUDAOPT_USE_OPENMP
 			bAbort = true;
 			#pragma omp flush (bAbort)
+			continue;
 			#else
 			return false;
 			#endif
@@ -2846,6 +2847,8 @@ bool Scene::RefineMeshCUDA(unsigned nResolutionLevel, unsigned nMinResolution, u
 		iters = MAXF(iters/(int)(nScale+1),8);
 		const int iterStop(iters*7/10);
 		Eigen::Matrix<float,Eigen::Dynamic,3,Eigen::RowMajor> gradients(mesh.vertices.GetSize(),3);
+		Util::Progress progress(_T("Processed iterations"), iters);
+		GET_LOGCONSOLE().Pause();
 		for (int iter=0; iter<iters; ++iter) {
 			refine.iteration = (unsigned)iter;
 			refine.nAlternatePair = (iter+1 < iters ? nAlternatePair : 0);
@@ -2864,7 +2867,10 @@ bool Scene::RefineMeshCUDA(unsigned nResolutionLevel, unsigned nMinResolution, u
 			}
 			DEBUG_EXTRA("\t%2d. g: %.5f (%.3e - %.3e)\ts: %.3f", iter+1, gradients.norm(), gradients.norm()/mesh.vertices.GetSize(), gv/mesh.vertices.GetSize(), gstep);
 			gstep *= 0.98f;
+			progress.display(iter);
 		}
+		GET_LOGCONSOLE().Play();
+		progress.close();
 
 		#if TD_VERBOSE != TD_VERBOSE_OFF
 		if (VERBOSITY_LEVEL > 2)

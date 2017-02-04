@@ -15,7 +15,7 @@ template <typename TYPE, int DIMS>
 inline TAABB<TYPE,DIMS>::TAABB(bool)
 	:
 	ptMin(POINT::Constant(std::numeric_limits<TYPE>::max())),
-	ptMax(POINT::Constant(std::numeric_limits<TYPE>::min()))
+	ptMax(POINT::Constant(std::numeric_limits<TYPE>::lowest()))
 {
 }
 template <typename TYPE, int DIMS>
@@ -37,7 +37,8 @@ inline TAABB<TYPE,DIMS>::TAABB(const POINT& center, const TYPE& radius)
 {
 }
 template <typename TYPE, int DIMS>
-inline TAABB<TYPE,DIMS>::TAABB(const POINT* pts, size_t n)
+template <typename TPoint>
+inline TAABB<TYPE,DIMS>::TAABB(const TPoint* pts, size_t n)
 {
 	Set(pts, n);
 } // constructor
@@ -48,13 +49,12 @@ template <typename TYPE, int DIMS>
 inline void TAABB<TYPE,DIMS>::Reset()
 {
 	ptMin = POINT::Constant(std::numeric_limits<TYPE>::max());
-	ptMax = POINT::Constant(std::numeric_limits<TYPE>::min());
+	ptMax = POINT::Constant(std::numeric_limits<TYPE>::lowest());
 }
 template <typename TYPE, int DIMS>
 inline void TAABB<TYPE,DIMS>::Set(const POINT& _pt)
 {
-	ptMin = _pt;
-	ptMax = _pt;
+	ptMin = ptMax = _pt;
 }
 template <typename TYPE, int DIMS>
 inline void TAABB<TYPE,DIMS>::Set(const POINT& _ptMin, const POINT& _ptMax)
@@ -69,11 +69,11 @@ inline void TAABB<TYPE,DIMS>::Set(const POINT& center, const TYPE& radius)
 	ptMax = center+POINT::Constant(radius);
 }
 template <typename TYPE, int DIMS>
-inline void TAABB<TYPE,DIMS>::Set(const POINT* pts, size_t n)
+template <typename TPoint>
+inline void TAABB<TYPE,DIMS>::Set(const TPoint* pts, size_t n)
 {
 	ASSERT(n > 0);
-	ptMin = pts[0];
-	ptMax = pts[0];
+	ptMin = ptMax = pts[0];
 	for (size_t i=1; i<n; ++i)
 		Insert(pts[i]);
 } // Set

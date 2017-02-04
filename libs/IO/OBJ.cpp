@@ -46,13 +46,14 @@ ObjModel::MaterialLib::MaterialLib()
 {
 }
 
-bool ObjModel::MaterialLib::Save(const String& prefix) const
+bool ObjModel::MaterialLib::Save(const String& prefix, bool texLossless) const
 {
 	std::ofstream out((prefix+".mtl").c_str());
 	if (!out.good())
 		return false;
 
 	const String pathName(Util::getFilePath(prefix));
+	const String name(Util::getFileFullName(prefix));
 	#ifdef OBJ_USE_OPENMP
 	bool bSuccess(true);
 	#pragma omp parallel for
@@ -60,18 +61,20 @@ bool ObjModel::MaterialLib::Save(const String& prefix) const
 	for (int_t i = 0; i < (int_t)materials.size(); ++i) {
 		const Material& mat = materials[i];
 		// save material description
-		if (mat.diffuse_name.IsEmpty())
-			const_cast<String&>(mat.diffuse_name) = prefix+"_"+mat.name+"_map_Kd.png";
 		out << "newmtl " << mat.name << "\n"
 			<< "Ka 1.000000 1.000000 1.000000" << "\n"
 			<< "Kd " << mat.Kd.r << " " << mat.Kd.g << " " << mat.Kd.b << "\n"
 			<< "Ks 0.000000 0.000000 0.000000" << "\n"
 			<< "Tr 1.000000" << "\n"
 			<< "illum 1" << "\n"
-			<< "Ns 1.000000" << "\n"
-			<< "map_Kd " << mat.diffuse_name << "\n";
+			<< "Ns 1.000000" << "\n";
 		// save material maps
-		const bool bRet(mat.diffuse_map.Save(mat.diffuse_name));
+		if (mat.diffuse_map.empty())
+			continue;
+		if (mat.diffuse_name.IsEmpty())
+			const_cast<String&>(mat.diffuse_name) = name+"_"+mat.name+"_map_Kd."+(texLossless?"png":"jpg");
+		out << "map_Kd " << mat.diffuse_name << "\n";
+		const bool bRet(mat.diffuse_map.Save(pathName+mat.diffuse_name));
 		#ifdef OBJ_USE_OPENMP
 		#pragma omp critical
 		if (!bRet)
@@ -117,17 +120,21 @@ bool ObjModel::MaterialLib::Load(const String& fileName)
 
 // S T R U C T S ///////////////////////////////////////////////////
 
-bool ObjModel::Save(const String& fileName, unsigned precision) const
+bool ObjModel::Save(const String& fileName, unsigned precision, bool texLossless) const
 {
-	const String prefix(Util::getFileName(fileName));
-	if (!material_lib.Save(prefix))
+	if (vertices.empty())
+		return false;
+	const String prefix(Util::getFullFileName(fileName));
+	const String name(Util::getFileFullName(prefix));
+
+	if (!material_lib.Save(prefix, texLossless))
 		return false;
 
 	std::ofstream out((prefix + ".obj").c_str());
 	if (!out.good())
 		return false;
 
-	out << "mtllib " << prefix << ".mtl" << "\n";
+	out << "mtllib " << name << ".mtl" << "\n";
 
 	out << std::fixed << std::setprecision(precision);
 	for (size_t i = 0; i < vertices.size(); ++i) {

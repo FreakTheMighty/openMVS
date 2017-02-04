@@ -5,6 +5,7 @@
 #  CGAL_INCLUDE_DIRS     - CGAL include directories
 #  CGAL_LIBRARY_DIRS     - Link directories for CGAL libraries
 #  CGAL_LIBS             - CGAL libraries
+#  CGAL_VERSION          - MAJOR.MINOR
 #----------------------------------------------------------
  
 set(CMAKE_ALLOW_LOOSE_LOOP_CONSTRUCTS true)
@@ -26,7 +27,7 @@ if(NOT CGAL_DIR)
   #
   # Look for an installation or build tree.
   #
-  find_path(CGAL_DIR CGALConfig.cmake
+  find_path(CGAL_DIR "CGALConfig.cmake"
     # Look for an environment variable CGAL_DIR.
     HINTS "${CGAL_ROOT}" "$ENV{CGAL_ROOT}" "$ENV{CGAL_DIR}"
 
@@ -34,7 +35,7 @@ if(NOT CGAL_DIR)
     ${CGAL_DIR_SEARCH}
 
     # Look in standard UNIX install locations.
-    PATHS "$ENV{PROGRAMFILES}/CGAL" "$ENV{PROGRAMW6432}/CGAL" "/usr/local/lib/CGAL" "/usr/lib/CGAL"
+    PATHS "$ENV{PROGRAMFILES}" "$ENV{PROGRAMW6432}" "/usr" "/usr/local" "/usr/share" "/usr/local/share" "/usr/lib/cmake" "/usr/local/lib/cmake" "/usr/include" "/usr/lib/x86_64-linux-gnu/cmake"
 
     # Read from the CMakeSetup registry entries.  It is likely that
     # CGAL will have been recently built.
@@ -49,6 +50,8 @@ if(NOT CGAL_DIR)
     [HKEY_CURRENT_USER\\Software\\Kitware\\CMakeSetup\\Settings\\StartPath;WhereBuild9]
     [HKEY_CURRENT_USER\\Software\\Kitware\\CMakeSetup\\Settings\\StartPath;WhereBuild10]
 	
+	PATH_SUFFIXES "CGAL"
+	
 	DOC "Root directory of CGAL library"
   )
 endif()
@@ -56,10 +59,12 @@ endif()
 ##====================================================
 ## Include CGAL library
 ##----------------------------------------------------
+set(CGAL_VERSION "")
 if(EXISTS "${CGAL_DIR}" AND NOT "${CGAL_DIR}" STREQUAL "")
 	if(EXISTS "${CGAL_DIR}/CGALConfig.cmake")
 		include("${CGAL_DIR}/CGALConfig.cmake")
 		set(CGAL_LIBS ${CGAL_LIBS} ${CGAL_LIBRARIES} ${CGAL_LIBRARY} ${CGAL_Core_LIBRARY} ${CGAL_ImageIO_LIBRARY} ${CGAL_3RD_PARTY_LIBRARIES} ${CGAL_Core_3RD_PARTY_LIBRARIES} ${CGAL_ImageIO_3RD_PARTY_LIBRARIES} ${MPFR_LIBRARIES} ${GMP_LIBRARIES} ${ZLIB_LIBRARIES})
+		set(CGAL_VERSION "${CGAL_MAJOR_VERSION}.${CGAL_MINOR_VERSION}")
 	else()
 		set(CGAL_INCLUDE_DIRS "${CGAL_DIR}/include" "${CGAL_DIR}/auxiliary/gmp/include")
 		set(CGAL_LIBRARY_DIRS "${CGAL_DIR}/lib${PACKAGE_LIB_SUFFIX}")
@@ -67,7 +72,7 @@ if(EXISTS "${CGAL_DIR}" AND NOT "${CGAL_DIR}" STREQUAL "")
 	set(CGAL_FOUND TRUE)
 	set(CGAL_DIR "${CGAL_DIR}" CACHE PATH "" FORCE)
 	mark_as_advanced(CGAL_DIR)
-	message(STATUS "CGAL found (include: ${CGAL_INCLUDE_DIRS})")
+	message(STATUS "CGAL ${CGAL_VERSION} found (include: ${CGAL_INCLUDE_DIRS})")
 else()
 	package_report_not_found(CGAL "Please specify CGAL directory using CGAL_ROOT env. variable")
 endif()

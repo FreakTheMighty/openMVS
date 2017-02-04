@@ -19,17 +19,18 @@ namespace SEACAVE {
 
 // S T R U C T S ///////////////////////////////////////////////////
 
-// Basic plane class
-// (represented in Hessian Normal Form: n.x+d=0 <=> ax+by+cz+d=0)
-template <typename TYPE>
+// Basic hyper-plane class
+// (plane represented in Hessian Normal Form: n.x+d=0 <=> ax+by+cz+d=0)
+template <typename TYPE, int DIMS=3>
 class TPlane
 {
+	STATIC_ASSERT(DIMS > 0 && DIMS <= 3);
+
 public:
-	typedef Eigen::Matrix<TYPE,4,1> VECTOR4;
-	typedef Eigen::Matrix<TYPE,3,1> VECTOR;
-	typedef Eigen::Matrix<TYPE,3,1> POINT;
-	typedef SEACAVE::TAABB<TYPE,3> AABB;
-	typedef SEACAVE::TRay<TYPE,3> RAY;
+	typedef Eigen::Matrix<TYPE,DIMS,1> VECTOR;
+	typedef Eigen::Matrix<TYPE,DIMS,1> POINT;
+	typedef SEACAVE::TAABB<TYPE,DIMS> AABB;
+	typedef SEACAVE::TRay<TYPE,DIMS> RAY;
 
 	VECTOR	m_vN;	// plane normal vector
 	TYPE	m_fD;	// distance to origin
@@ -40,18 +41,18 @@ public:
 	inline TPlane(const VECTOR&, TYPE);
 	inline TPlane(const VECTOR&, const POINT&);
 	inline TPlane(const POINT&, const POINT&, const POINT&);
-	inline TPlane(const VECTOR4&);
-	inline TPlane(const TYPE p[4]);
+	inline TPlane(const TYPE p[DIMS+1]);
 
 	inline void Set(const VECTOR&, TYPE);
 	inline void Set(const VECTOR&, const POINT&);
 	inline void Set(const POINT&, const POINT&, const POINT&);
-	inline void Set(const VECTOR4&);
-	inline void Set(const TYPE p[4]);
+	inline void Set(const TYPE p[DIMS+1]);
 	inline void Negate();
+
 	inline TYPE Distance(const TPlane&) const;
-	inline TYPE DistanceAbs(const POINT&) const;
 	inline TYPE Distance(const POINT&) const;
+	inline TYPE DistanceAbs(const POINT&) const;
+
 	inline UINT Classify(const POINT&) const;
 	inline UINT Classify(const AABB&) const;
 
@@ -61,18 +62,18 @@ public:
 	bool Intersects(const TPlane& plane, RAY& ray) const;
 	bool Intersects(const AABB& aabb) const;
 
-	inline TYPE& operator [] (BYTE i) { ASSERT(i<4); return m_vN.data()[i]; }
-	inline TYPE operator [] (BYTE i) const { ASSERT(i<4); return m_vN.data()[i]; }
+	inline TYPE& operator [] (BYTE i) { ASSERT(i<=DIMS); return m_vN.data()[i]; }
+	inline TYPE operator [] (BYTE i) const { ASSERT(i<=DIMS); return m_vN.data()[i]; }
 }; // class TPlane
 /*----------------------------------------------------------------*/
 
 
 // Basic frustum class
-// (represented as 6 planes)
+// (represented as 6 planes oriented toward outside the frustum volume)
 template <typename TYPE, int DIMS=6>
 class TFrustum
 {
-	COMPILE_TIME_ASSERT(DIMS > 0 && DIMS <= 6);
+	STATIC_ASSERT(DIMS > 0 && DIMS <= 6);
 
 public:
 	typedef Eigen::Matrix<TYPE,4,4,Eigen::RowMajor> MATRIX4x4;
@@ -80,7 +81,8 @@ public:
 	typedef Eigen::Matrix<TYPE,4,1> VECTOR4;
 	typedef Eigen::Matrix<TYPE,3,1> VECTOR;
 	typedef Eigen::Matrix<TYPE,3,1> POINT;
-	typedef SEACAVE::TPlane<TYPE> PLANE;
+	typedef SEACAVE::TPlane<TYPE,3> PLANE;
+	typedef SEACAVE::TSphere<TYPE,3> SPHERE;
 	typedef SEACAVE::TAABB<TYPE,3> AABB;
 
 	PLANE	m_planes[DIMS];	// left, right, top, bottom, near and far planes
@@ -99,6 +101,7 @@ public:
 	void Set(const MATRIX3x4&, TYPE width, TYPE height, TYPE near=TYPE(0.0001), TYPE far=TYPE(1000));
 
 	UINT Classify(const POINT&) const;
+	UINT Classify(const SPHERE&) const;
 	UINT Classify(const AABB&) const;
 
 	inline TYPE& operator [] (BYTE i) { ASSERT(i<DIMS); return m_planes[i]; }

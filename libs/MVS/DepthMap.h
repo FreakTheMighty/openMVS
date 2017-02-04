@@ -62,6 +62,7 @@ extern unsigned nMinResolution;
 extern unsigned nResolutionLevel;
 extern unsigned nMinViews;
 extern unsigned nMaxViews;
+extern unsigned nMinViewsFuse;
 extern unsigned nMinViewsFilter;
 extern unsigned nMinViewsFilterAdjust;
 extern unsigned nMinViewsTrustPoint;
@@ -98,19 +99,7 @@ extern float fRandomSmoothBonus;
 /*----------------------------------------------------------------*/
 
 
-typedef float Depth;
-typedef Point3f Normal;
-typedef TImage<Depth> DepthMap;
-typedef TImage<Normal> NormalMap;
-typedef TImage<float> ConfidenceMap;
-typedef SEACAVE::cList<Depth,Depth,0> DepthArr;
-typedef SEACAVE::cList<DepthMap,const DepthMap&,2> DepthMapArr;
-typedef SEACAVE::cList<NormalMap,const NormalMap&,2> NormalMapArr;
-typedef SEACAVE::cList<ConfidenceMap,const ConfidenceMap&,2> ConfidenceMapArr;
-/*----------------------------------------------------------------*/
-
-
-struct DepthData {
+struct MVS_API DepthData {
 	struct ViewData {
 		float scale; // image scale relative to the reference image
 		Camera camera; // camera matrix corresponding to this image
@@ -180,15 +169,15 @@ struct DepthData {
 	}
 	#endif
 };
-typedef SEACAVE::cList<DepthData,const DepthData&,1> DepthDataArr;
+typedef MVS_API SEACAVE::cList<DepthData,const DepthData&,1> DepthDataArr;
 /*----------------------------------------------------------------*/
 
 
-struct DepthEstimator {
-	static const int TexelChannels = 1;
-	static const int nSizeHalfWindow = 3;
-	static const int nSizeWindow = nSizeHalfWindow*2+1;
-	static const int nTexels = nSizeWindow*nSizeWindow*TexelChannels;
+struct MVS_API DepthEstimator {
+	enum { TexelChannels = 1 };
+	enum { nSizeHalfWindow = 3 };
+	enum { nSizeWindow = nSizeHalfWindow*2+1 };
+	enum { nTexels = nSizeWindow*nSizeWindow*TexelChannels };
 
 	enum ENDIRECTION {
 		LT2RB = 0,
@@ -350,25 +339,28 @@ struct DepthEstimator {
 
 
 // Tools
-unsigned EstimatePlane(const Point3Arr&, Plane&, double& maxThreshold, bool arrInliers[]=NULL, size_t maxIters=0);
-unsigned EstimatePlaneLockFirstPoint(const Point3Arr&, Plane&, double& maxThreshold, bool arrInliers[]=NULL, size_t maxIters=0);
-unsigned EstimatePlaneTh(const Point3Arr&, Plane&, double maxThreshold, bool arrInliers[]=NULL, size_t maxIters=0);
-unsigned EstimatePlaneThLockFirstPoint(const Point3Arr&, Plane&, double maxThreshold, bool arrInliers[]=NULL, size_t maxIters=0);
+MVS_API unsigned EstimatePlane(const Point3Arr&, Plane&, double& maxThreshold, bool arrInliers[]=NULL, size_t maxIters=0);
+MVS_API unsigned EstimatePlaneLockFirstPoint(const Point3Arr&, Plane&, double& maxThreshold, bool arrInliers[]=NULL, size_t maxIters=0);
+MVS_API unsigned EstimatePlaneTh(const Point3Arr&, Plane&, double maxThreshold, bool arrInliers[]=NULL, size_t maxIters=0);
+MVS_API unsigned EstimatePlaneThLockFirstPoint(const Point3Arr&, Plane&, double maxThreshold, bool arrInliers[]=NULL, size_t maxIters=0);
 
-void EstimatePointColors(const ImageArr& images, PointCloud& pointcloud);
-void EstimatePointNormals(const ImageArr& images, PointCloud& pointcloud, int numNeighbors=16/*K-nearest neighbors*/);
+MVS_API void EstimatePointColors(const ImageArr& images, PointCloud& pointcloud);
+MVS_API void EstimatePointNormals(const ImageArr& images, PointCloud& pointcloud, int numNeighbors=16/*K-nearest neighbors*/);
 
-bool SaveDepthMap(const String& fileName, const DepthMap& depthMap);
-bool LoadDepthMap(const String& fileName, DepthMap& depthMap);
-bool SaveNormalMap(const String& fileName, const NormalMap& normalMap);
-bool LoadNormalMap(const String& fileName, NormalMap& normalMap);
-bool SaveConfidenceMap(const String& fileName, const ConfidenceMap& confMap);
-bool LoadConfidenceMap(const String& fileName, ConfidenceMap& confMap);
+MVS_API bool SaveDepthMap(const String& fileName, const DepthMap& depthMap);
+MVS_API bool LoadDepthMap(const String& fileName, DepthMap& depthMap);
+MVS_API bool SaveNormalMap(const String& fileName, const NormalMap& normalMap);
+MVS_API bool LoadNormalMap(const String& fileName, NormalMap& normalMap);
+MVS_API bool SaveConfidenceMap(const String& fileName, const ConfidenceMap& confMap);
+MVS_API bool LoadConfidenceMap(const String& fileName, ConfidenceMap& confMap);
 
-bool ExportDepthMap(const String& fileName, const DepthMap& depthMap, Depth minDepth=FLT_MAX, Depth maxDepth=0);
-bool ExportNormalMap(const String& fileName, const NormalMap& normalMap);
-bool ExportConfidenceMap(const String& fileName, const ConfidenceMap& confMap);
-bool ExportPointCloud(const String& fileName, const Image&, const DepthMap&, const NormalMap&);
+MVS_API bool ExportDepthMap(const String& fileName, const DepthMap& depthMap, Depth minDepth=FLT_MAX, Depth maxDepth=0);
+MVS_API bool ExportNormalMap(const String& fileName, const NormalMap& normalMap);
+MVS_API bool ExportConfidenceMap(const String& fileName, const ConfidenceMap& confMap);
+MVS_API bool ExportPointCloud(const String& fileName, const Image&, const DepthMap&, const NormalMap&);
+
+MVS_API void CompareDepthMaps(const DepthMap& depthMap, const DepthMap& depthMapGT, uint32_t idxImage, float threshold=0.01f);
+MVS_API void CompareNormalMaps(const NormalMap& normalMap, const NormalMap& normalMapGT, uint32_t idxImage);
 /*----------------------------------------------------------------*/
 
 } // namespace MVS

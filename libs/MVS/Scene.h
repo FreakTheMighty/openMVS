@@ -46,7 +46,7 @@
 
 namespace MVS {
 
-class Scene
+class MVS_API Scene
 {
 public:
 	PlatformArr platforms; // camera platforms, each containing the mounted cameras and all known poses
@@ -61,6 +61,8 @@ public:
 public:
 	inline Scene(unsigned _nMaxThreads=0) : nMaxThreads(Thread::getMaxThreads(_nMaxThreads)) {}
 
+	void Release();
+
 	bool LoadInterface(const String& fileName);
 	bool SaveInterface(const String& fileName) const;
 
@@ -70,13 +72,18 @@ public:
 	bool SelectNeighborViews(uint32_t ID, IndexArr& points, unsigned nMinViews=3, unsigned nMinPointViews=2, float fOptimAngle=FD2R(12));
 	static bool FilterNeighborViews(ViewScoreArr& neighbors, float fMinArea=0.12f, float fMinScale=0.2f, float fMaxScale=2.4f, float fMinAngle=FD2R(3), float fMaxAngle=FD2R(45), unsigned nMaxViews=12);
 
+	bool ExportCamerasMLP(const String& fileName, const String& fileNameScene) const;
+
 	// Dense reconstruction
 	bool DenseReconstruction();
 	void DenseReconstructionEstimate(void*);
 	void DenseReconstructionFilter(void*);
 
 	// Mesh reconstruction
-	bool ReconstructMesh(float distInsert=2, bool bUseFreeSpaceSupport=true);
+	bool ReconstructMesh(float distInsert=2, bool bUseFreeSpaceSupport=true, unsigned nItersFixNonManifold=4,
+						 float kSigma=2.f, float kQual=1.f, float kb=4.f,
+						 float kf=3.f, float kRel=0.1f/*max 0.3*/, float kAbs=1000.f/*min 500*/, float kOutl=400.f/*max 700.f*/,
+						 float kInf=(float)(INT_MAX/8));
 
 	// Mesh refinement
 	bool RefineMesh(unsigned nResolutionLevel, unsigned nMinResolution, unsigned nMaxViews, float fDecimateMesh, unsigned nCloseHoles, unsigned nEnsureEdgeSize, unsigned nMaxFaceArea, unsigned nScales, float fScaleStep, unsigned nReduceMemory, unsigned nAlternatePair, float fRegularityWeight, float fRatioRigidityElasticity, float fThPlanarVertex, float fGradientStep);

@@ -56,9 +56,11 @@ bool bLocalSeamLeveling;
 unsigned nTextureSizeMultiple;
 unsigned nRectPackingHeuristic;
 uint32_t nColEmpty;
+unsigned nOrthoMapResolution;
 unsigned nArchiveType;
 int nProcessPriority;
 unsigned nMaxThreads;
+String strExportType;
 String strConfigFileName;
 boost::program_options::variables_map vm;
 } // namespace OPT
@@ -76,6 +78,7 @@ bool Initialize(size_t argc, LPCTSTR* argv)
 		("help,h", "produce this help message")
 		("working-folder,w", boost::program_options::value<std::string>(&WORKING_FOLDER), "working directory (default current directory)")
 		("config-file,c", boost::program_options::value<std::string>(&OPT::strConfigFileName)->default_value(APPNAME _T(".cfg")), "file name containing program options")
+		("export-type", boost::program_options::value<std::string>(&OPT::strExportType)->default_value(_T("ply")), "file type used to export the 3D scene (ply or obj)")
 		("archive-type", boost::program_options::value<unsigned>(&OPT::nArchiveType)->default_value(2), "project archive type: 0-text, 1-binary, 2-compressed binary")
 		("process-priority", boost::program_options::value<int>(&OPT::nProcessPriority)->default_value(-1), "process priority (below normal by default)")
 		("max-threads", boost::program_options::value<unsigned>(&OPT::nMaxThreads)->default_value(0), "maximum number of threads (0 for using all available cores)")
@@ -91,7 +94,7 @@ bool Initialize(size_t argc, LPCTSTR* argv)
 		;
 
 	// group of options allowed both on command line and in config file
-	boost::program_options::options_description config("Refine options");
+	boost::program_options::options_description config("Texture options");
 	config.add_options()
 		("input-file,i", boost::program_options::value<std::string>(&OPT::strInputFileName), "input filename containing camera poses and image list")
 		("output-file,o", boost::program_options::value<std::string>(&OPT::strOutputFileName), "output filename for storing the mesh")
@@ -104,6 +107,7 @@ bool Initialize(size_t argc, LPCTSTR* argv)
 		("texture-size-multiple", boost::program_options::value<unsigned>(&OPT::nTextureSizeMultiple)->default_value(0), "texture size should be a multiple of this value (0 - power of two)")
 		("patch-packing-heuristic", boost::program_options::value<unsigned>(&OPT::nRectPackingHeuristic)->default_value(3), "specify the heuristic used when deciding where to place a new patch (0 - best fit, 3 - good speed, 100 - best speed)")
 		("empty-color", boost::program_options::value<uint32_t>(&OPT::nColEmpty)->default_value(0x00FF7F27), "color used for faces not covered by any image")
+		("orthographic-image-resolution", boost::program_options::value<unsigned>(&OPT::nOrthoMapResolution)->default_value(0), "orthographic image resolution to be generated from the textured mesh - the mesh is expected to be already geo-referenced or at least properly oriented (0 - disabled)")
 		;
 
 	// hidden options, allowed both on command line and
@@ -156,12 +160,13 @@ bool Initialize(size_t argc, LPCTSTR* argv)
 	}
 	if (OPT::strInputFileName.IsEmpty())
 		return false;
+	OPT::strExportType = OPT::strExportType.ToLower() == _T("obj") ? _T(".obj") : _T(".ply");
 
 	// initialize optional options
 	Util::ensureValidPath(OPT::strOutputFileName);
 	Util::ensureUnifySlash(OPT::strOutputFileName);
 	if (OPT::strOutputFileName.IsEmpty())
-		OPT::strOutputFileName = Util::getFullFileName(OPT::strInputFileName) + _T(".mvs");
+		OPT::strOutputFileName = Util::getFullFileName(OPT::strInputFileName) + _T("_texture.mvs");
 
 	// initialize global options
 	Process::setCurrentProcessPriority((Process::Priority)OPT::nProcessPriority);
@@ -212,14 +217,43 @@ int main(int argc, LPCTSTR* argv)
 		VERBOSE("error: empty initial mesh");
 		return EXIT_FAILURE;
 	}
+	const String baseFileName(MAKE_PATH_SAFE(Util::getFullFileName(OPT::strOutputFileName)));
+	if (OPT::nOrthoMapResolution && !scene.mesh.textureDiffuse.empty()) {
+		// the input mesh is already textured and an orthographic projection was requested
+		goto ProjectOrtho;
+	}
+
+	{
+	// compute mesh texture
 	TD_TIMER_START();
 	if (!scene.TextureMesh(OPT::nResolutionLevel, OPT::nMinResolution, OPT::fOutlierThreshold, OPT::fRatioDataSmoothness, OPT::bGlobalSeamLeveling, OPT::bLocalSeamLeveling, OPT::nTextureSizeMultiple, OPT::nRectPackingHeuristic, Pixel8U(OPT::nColEmpty)))
 		return EXIT_FAILURE;
 	VERBOSE("Mesh texturing completed: %u vertices, %u faces (%s)", scene.mesh.vertices.GetSize(), scene.mesh.faces.GetSize(), TD_TIMER_GET_FMT().c_str());
 
 	// save the final mesh
-	scene.mesh.Save(MAKE_PATH_SAFE(Util::getFullFileName(OPT::strOutputFileName) + _T("_texture.ply")));
-	scene.Save(MAKE_PATH_SAFE(Util::getFullFileName(OPT::strOutputFileName) + _T("_texture.mvs")), (ARCHIVE_TYPE)OPT::nArchiveType);
+	scene.Save(baseFileName+_T(".mvs"), (ARCHIVE_TYPE)OPT::nArchiveType);
+	scene.mesh.Save(baseFileName+OPT::strExportType);
+	#if TD_VERBOSE != TD_VERBOSE_OFF
+	if (VERBOSITY_LEVEL > 2)
+		scene.ExportCamerasMLP(baseFileName+_T(".mlp"), baseFileName+OPT::strExportType);
+	#endif
+	}
+
+	if (OPT::nOrthoMapResolution) {
+		// project mesh as an orthographic image
+		ProjectOrtho:
+		Image8U3 imageRGB;
+		Image8U imageRGBA[4];
+		Point3 center;
+		scene.mesh.ProjectOrthoTopDown(OPT::nOrthoMapResolution, imageRGB, imageRGBA[3], center);
+		Image8U4 image;
+		cv::split(imageRGB, imageRGBA);
+		cv::merge(imageRGBA, 4, image);
+		image.Save(baseFileName+_T("_orthomap.png"));
+		SML sml(_T("OrthoMap"));
+		sml[_T("Center")].val = String::FormatString(_T("%g %g %g"), center.x, center.y, center.z);
+		sml.Save(baseFileName+_T("_orthomap.txt"));
+	}
 
 	Finalize();
 	return EXIT_SUCCESS;

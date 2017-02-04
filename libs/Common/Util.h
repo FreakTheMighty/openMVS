@@ -196,8 +196,6 @@ typedef class GENERAL_API THistogram<double> Histogram64F;
 class GENERAL_API Util
 {
 public:
-	static String emptyString;
-
 	static String getAppName() {
 		#ifdef _MSC_VER
 		TCHAR buf[MAX_PATH+1];
@@ -206,7 +204,7 @@ public:
 		#else // _MSC_VER
 		LPTSTR home = getenv("HOME");
 		if (home == NULL)
-			return emptyString;
+			return String();
 		String name(String(home) + "/app");
 		return ensureUnifySlash(name);
 		#endif // _MSC_VER
@@ -262,12 +260,22 @@ public:
 		#endif // _MSC_VER
 	}
 
+	static String& trimUnifySlash(String& aFile)
+	{
+		String::size_type start = 1;
+		while ((start = aFile.find(PATH_SEPARATOR, start)) != String::npos)
+			if (aFile[start-1] == PATH_SEPARATOR)
+				aFile.erase(start, 1);
+			else
+				++start;
+		return aFile;
+	}
 	static String& ensureUnifySlash(String& aFile)
 	{
 		String::size_type start = 0;
 		while ((start = aFile.find(REVERSE_PATH_SEPARATOR, start)) != String::npos)
 			aFile[start] = PATH_SEPARATOR;
-		return aFile;
+		return trimUnifySlash(aFile);
 	}
 	static String& ensureUnifyReverseSlash(String& aFile)
 	{
@@ -307,7 +315,12 @@ public:
 
 	static inline bool isFullPath(LPCTSTR path) {
 		// returns true if local drive full path or network path
-		return (path && (path[1]==_T(':') ||
+		return (path && (
+			#ifdef _MSC_VER
+			path[1]==_T(':') ||
+			#else // _MSC_VER
+			path[0]==_T('/') ||
+			#endif // _MSC_VER
 			#ifdef UNICODE
 			*((DWORD*)path)==0x5C005C00/*"\\\\"*/));
 			#else
@@ -336,7 +349,7 @@ public:
 
 	static String getFilePath(const String& path) {
 		const String::size_type i = path.rfind(PATH_SEPARATOR);
-		return (i != String::npos) ? path.substr(0, i+1) : emptyString;
+		return (i != String::npos) ? path.substr(0, i+1) : String();
 	}
 	static String getFullFileName(const String& path) {
 		const String::size_type i = path.rfind('.');
@@ -357,11 +370,11 @@ public:
 	}
 	static String getFileExt(const String& path) {
 		const String::size_type i = path.rfind('.');
-		return (i != String::npos) ? path.substr(i) : emptyString;
+		return (i != String::npos) ? path.substr(i) : String();
 	}
 	static String getLastDir(const String& path) {
 		const String::size_type i = path.rfind(PATH_SEPARATOR);
-		if (i == String::npos) return Util::emptyString;
+		if (i == String::npos) return String();
 		const String::size_type j = path.rfind(PATH_SEPARATOR, i-1);
 		if (j != String::npos)
 			return path.substr(j+1, j-i-1);
@@ -386,10 +399,10 @@ public:
 	static String getValue(const String& str, const String& label) {
 		String::size_type pos = str.find(label);
 		if (pos == String::npos)
-			return emptyString;
+			return String();
 		pos = str.find(_T("="), pos);
 		if (pos == String::npos)
-			return emptyString;
+			return String();
 		String::size_type end = str.find_first_of(_T(LINE_SEPARATOR_STR), ++pos);
 		return str.substr(pos, end-pos);
 	}
@@ -501,7 +514,7 @@ public:
 
 	static String toString(const wchar_t* wsz) {
 		if (wsz == NULL)
-			return emptyString;
+			return String();
 		#if 1
 		const std::wstring ws(wsz);
 		return std::string(ws.cbegin(), ws.cend());
@@ -509,10 +522,10 @@ public:
 		std::mbstate_t state = std::mbstate_t();
 		const size_t len(std::wcsrtombs(NULL, &wsz, 0, &state));
 		if (len == static_cast<std::size_t>(-1))
-			return emptyString;
+			return String();
 		std::vector<char> mbstr(len+1);
 		if (std::wcsrtombs(&mbstr[0], &wsz, mbstr.size(), &state) == static_cast<std::size_t>(-1))
-			return emptyString;
+			return String();
 		return String(&mbstr[0]);
 		#elif 1
 		const std::wstring ws(wsz);
@@ -524,7 +537,7 @@ public:
 		const wchar_t* from_next;
 		char* to_next;
 		if (converter.out(state, ws.data(), ws.data() + ws.length(), from_next, &to[0], &to[0] + to.size(), to_next) != converter_type::ok)
-			return emptyString;
+			return String();
 		return std::string(&to[0], to_next);
 		#else
 		typedef std::codecvt_utf8<wchar_t> convert_typeX;
@@ -591,13 +604,7 @@ public:
 	 * @param   pv      Pointer to the memory block.
 	 * @param   cb      Size of the memory block in bytes.
 	 */
-	static uint64_t CRC64(const void *pv, size_t cb) {
-		const uint8_t* pu8 = (const uint8_t *)pv;
-		uint64_t       uCRC64 = 0ULL;
-		while (cb--)
-			uCRC64 = ms_au64CRC64[(uCRC64 ^ *pu8++) & 0xff] ^ (uCRC64 >> 8);
-		return uCRC64;
-	}
+	static uint64_t CRC64(const void *pv, size_t cb);
 
 	/**
 	 * Start a multiblock CRC64 calculation.
@@ -615,12 +622,7 @@ public:
 	 * @param   pv      The data block to process.
 	 * @param   cb      The size of the data block in bytes.
 	 */
-	static uint64_t CRC64Process(uint64_t uCRC64, const void *pv, size_t cb) {
-		const uint8_t *pu8 = (const uint8_t *)pv;
-		while (cb--)
-			uCRC64 = ms_au64CRC64[(uCRC64 ^ *pu8++) & 0xff] ^ (uCRC64 >> 8);
-		return uCRC64;
-	}
+	static uint64_t CRC64Process(uint64_t uCRC64, const void *pv, size_t cb);
 	/**
 	 * Complete a multiblock CRC64 calculation.
 	 *
@@ -630,8 +632,6 @@ public:
 	static uint64_t CRC64Finish(uint64_t uCRC64) {
 		return uCRC64;
 	}
-
-	static const uint64_t ms_au64CRC64[256];
 
 
 	static String	GetCPUInfo();
@@ -658,10 +658,49 @@ public:
 		const Timer::SysType start; // time when the work started
 		Timer::Type lastElapsed; // time when the last progress was displayed
 		size_t lastMsgLen; // how many characters had the last message
+		volatile size_t processed; // number of jobs already processed
+		CriticalSection cs; // multi-threading safety only for the incremental operator
 
 		Progress(const String& _msg, size_t _total, Timer::Type _slp=100/*ms*/)
-			: msg(_msg), total(_total), slp(_slp), start(Timer::GetSysTime()), lastElapsed(0), lastMsgLen(0) {}
+			: msg(_msg), total(_total), slp(_slp), start(Timer::GetSysTime()), lastElapsed(0), lastMsgLen(0), processed(0) {}
+		~Progress() { if (processed) close(); }
 
+		void operator++ () {
+			Thread::safeInc((Thread::safe_t&)processed);
+			if (cs.TryEnter()) {
+				process();
+				cs.Leave();
+			}
+		}
+		void display(size_t done) {
+			processed = done;
+			process();
+		}
+		void displayRemaining(size_t remaining) {
+			processed = total-remaining;
+			process();
+		}
+		void process() {
+			// make sure we don't print the progress too often
+			const Timer::Type elapsed(Timer::SysTime2TimeMs(Timer::GetSysTime()-start));
+			if (elapsed-lastElapsed < slp)
+				return;
+			lastElapsed = elapsed;
+			// compute percentage, elapsed and ETA
+			const size_t done(processed);
+			const float percentage((float)done/(float)total);
+			const Timer::Type remaining(percentage<0.01f && (done<10 || elapsed<10*1000) ? Timer::Type(0) : elapsed/percentage - elapsed);
+			// display progress
+			print(String::FormatString(_T("%s %u (%.2f%%, %s, ETA %s)..."), msg.c_str(), done, percentage*100.f, formatTime((int64_t)elapsed,1).c_str(), formatTime((int64_t)remaining,2).c_str()));
+		}
+		void close() {
+			// make sure we print the complete progress
+			const Timer::Type elapsed(Timer::SysTime2TimeMs(Timer::GetSysTime()-start));
+			// display progress
+			print(String::FormatString(_T("%s %u (100%%, %s)"), msg.c_str(), total, formatTime((int64_t)elapsed).c_str()));
+			std::cout << _T("\n");
+			processed = 0;
+		}
 		void print(const String& line) {
 			// print given line and make sure the last line is erased
 			const size_t msgLen = line.length();
@@ -670,28 +709,6 @@ public:
 				std::cout << String(lastMsgLen-msgLen, _T(' '));
 			std::cout << std::flush;
 			lastMsgLen = msgLen;
-		}
-		void display(size_t done) {
-			// make sure we don't print the progress too often
-			const Timer::Type elapsed(Timer::SysTime2TimeMs(Timer::GetSysTime()-start));
-			if (elapsed-lastElapsed < slp)
-				return;
-			lastElapsed = elapsed;
-			// compute percentage, elapsed and ETA
-			const float percentage((float)done/(float)total);
-			const Timer::Type remaining(percentage<0.01f && (done<10 || elapsed<10*1000) ? Timer::Type(0) : elapsed/percentage - elapsed);
-			// display progress
-			print(String::FormatString(_T("%s %u (%.2f%%, %s, ETA %s)..."), msg.c_str(), done, percentage*100.f, formatTime((int64_t)elapsed,1).c_str(), formatTime((int64_t)remaining,2).c_str()));
-		}
-		void displayRemaining(size_t remaining) {
-			display(total-remaining);
-		}
-		void close() {
-			// make sure we print the complete progress
-			const Timer::Type elapsed(Timer::SysTime2TimeMs(Timer::GetSysTime()-start));
-			// display progress
-			print(String::FormatString(_T("%s %u (100%%, %s)"), msg.c_str(), total, formatTime((int64_t)elapsed).c_str()));
-			std::cout << _T("\n");
 		}
 	};
 };

@@ -30,7 +30,7 @@ chars for red, green and blue.
 
 // S T R U C T S ///////////////////////////////////////////////////
 
-class PLY
+class IO_API PLY
 {
 public:
 	// scalar data types supported by PLY format
@@ -205,15 +205,14 @@ public:
 	void set_prop_rules(PlyRuleList *);
 	PlyRuleList *append_prop_rule(PlyRuleList *, const char *, const char *);
 
-	static inline bool equal_strings(const char* s1, const char* s2) { return _tcscmp(s1, s2) == 0; }
-
-protected:
 	/* find an element in a ply's list */
 	PlyElement* find_element(const char *) const;
-
 	/* find a property in an element's list */
 	int find_property(PlyElement *, const char *) const;
 
+	static inline bool equal_strings(const char* s1, const char* s2) { return _tcscmp(s1, s2) == 0; }
+
+protected:
 	/* write to a file the word describing a PLY file data type */
 	void write_scalar_type(SEACAVE::OSTREAM*, int);
 

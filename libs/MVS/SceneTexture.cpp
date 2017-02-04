@@ -145,24 +145,22 @@ enum Mask {
 };
 
 struct MeshTexture {
-	// store necessary data about a view
-	struct View {
-		Image32F imageGradMag; // image pixel gradient magnitudes
-	};
-	typedef cList<View,const View&,2> ViewsArr;
-
 	// used to render the surface to a view camera
 	typedef TImage<cuint32_t> FaceMap;
-	struct RasterMeshData {
-		const Camera& P;
+	struct RasterMesh : TRasterMesh<RasterMesh> {
+		typedef TRasterMesh<RasterMesh> Base;
 		FaceMap& faceMap;
-		DepthMap& depthMap;
-		Point3 normalPlane;
 		FIndex idxFace;
-		inline void operator()(const ImageRef& pt) {
+		RasterMesh(const Mesh::VertexArr& _vertices, const Camera& _camera, DepthMap& _depthMap, FaceMap& _faceMap)
+			: Base(_vertices, _camera, _depthMap), faceMap(_faceMap) {}
+		void Clear() {
+			Base::Clear();
+			faceMap.memset((uint8_t)NO_ID);
+		}
+		void Raster(const ImageRef& pt) {
 			if (!depthMap.isInside(pt))
 				return;
-			const float z((float)INVERT(normalPlane.dot(P.TransformPointI2C(Point2(pt)))));
+			const Depth z((Depth)INVERT(normalPlane.dot(camera.TransformPointI2C(Point2(pt)))));
 			ASSERT(z > 0);
 			Depth& depth = depthMap(pt);
 			if (depth == 0 || depth > z) {
@@ -243,7 +241,7 @@ struct MeshTexture {
 		inline void SortByPatchIndex(IndexArr& indices) const {
 			indices.Resize(patches.GetSize());
 			std::iota(indices.Begin(), indices.End(), 0);
-			std::sort(indices.Begin(), indices.End(), [&](const IndexArr::Type i0, const IndexArr::Type i1) -> bool {
+			std::sort(indices.Begin(), indices.End(), [&](IndexArr::Type i0, IndexArr::Type i1) -> bool {
 				return patches[i0].idxPatch < patches[i1].idxPatch;
 			});
 		}
@@ -298,10 +296,10 @@ struct MeshTexture {
 			const TexCoord p01(p1 - p0);
 			const float length(norm(p01));
 			ASSERT(length > 0.f);
-			const int nSamples(ROUND2INT(MAXF(length, 1.f) * 2.f));
+			const int nSamples(ROUND2INT(MAXF(length, 1.f) * 2.f)-1);
 			AccumColor edgeAccumColor;
 			for (int s=0; s<nSamples; ++s) {
-				const float len(static_cast<float>(s) / (nSamples-1));
+				const float len(static_cast<float>(s) / nSamples);
 				const TexCoord samplePos(p0 + p01 * len);
 				const Color color(image.sample<Sampler,Color>(sampler, samplePos));
 				edgeAccumColor.Add(RGB2YCBCR(color), 1.f-len);
@@ -378,17 +376,15 @@ public:
 	MeshTexture(Scene& _scene, unsigned _nResolutionLevel=0, unsigned _nMinResolution=640);
 	~MeshTexture();
 
-	bool InitImages();
-
 	void ListVertexFaces();
 
-	void ListCameraFaces(FaceDataViewArr&, float fOutlierThreshold);
+	bool ListCameraFaces(FaceDataViewArr&, float fOutlierThreshold);
 
 	#if TEXOPT_FACEOUTLIER != TEXOPT_FACEOUTLIER_NA
 	bool FaceOutlierDetection(FaceDataArr& faceDatas, float fOutlierThreshold) const;
 	#endif
 
-	void FaceViewSelection(float fOutlierThreshold, float fRatioDataSmoothness);
+	bool FaceViewSelection(float fOutlierThreshold, float fRatioDataSmoothness);
 
 	void CreateSeamVertices();
 	void GlobalSeamLeveling();
@@ -445,7 +441,6 @@ public:
 	Mesh::VertexArr& vertices;
 	Mesh::FaceArr& faces;
 	ImageArr& images;
-	ViewsArr views; // views' data
 
 	Scene& scene; // the mesh vertices and faces
 };
@@ -470,70 +465,6 @@ MeshTexture::~MeshTexture()
 	vertexBoundary.Release();
 }
 
-// load and initialize all images and
-// compute the gradient magnitudes for each input image
-bool MeshTexture::InitImages()
-{
-	views.Resize(images.GetSize());
-	typedef float real;
-	Image32F img;
-	cv::Mat grad[2];
-	Eigen::Matrix<real,Eigen::Dynamic,1> mGrad[2], mMag;
-	#ifdef TEXOPT_USE_OPENMP
-	bool bAbort(false);
-	#pragma omp parallel for private(img, grad, mGrad, mMag)
-	for (int_t iID=0; iID<(int_t)images.GetSize(); ++iID) {
-		#pragma omp flush (bAbort)
-		if (bAbort)
-			continue;
-		const uint32_t ID((uint32_t)iID);
-	#else
-	FOREACH(ID, images) {
-	#endif
-		Image& imageData = images[ID];
-		if (!imageData.IsValid())
-			continue;
-		// load image
-		unsigned level(nResolutionLevel);
-		const unsigned imageSize(imageData.RecomputeMaxResolution(level, nMinResolution));
-		if ((imageData.image.empty() || MAXF(imageData.width,imageData.height) != imageSize) && FAILED(imageData.ReloadImage(imageSize))) {
-			#ifdef TEXOPT_USE_OPENMP
-			bAbort = true;
-			#pragma omp flush (bAbort)
-			#else
-			return false;
-			#endif
-		}
-		imageData.UpdateCamera(scene.platforms);
-		// compute gradient magnitude
-		imageData.image.toGray(img, cv::COLOR_BGR2GRAY, true);
-		const size_t len((size_t)img.area());
-		mGrad[0].resize(len);
-		grad[0] = cv::Mat(img.rows, img.cols, cv::DataType<real>::type, (void*)mGrad[0].data());
-		mGrad[1].resize(len);
-		grad[1] = cv::Mat(img.rows, img.cols, cv::DataType<real>::type, (void*)mGrad[1].data());
-		#if 1
-		cv::Sobel(img, grad[0], cv::DataType<real>::type, 1, 0, 3, 1.0/8.0);
-		cv::Sobel(img, grad[1], cv::DataType<real>::type, 0, 1, 3, 1.0/8.0);
-		#elif 1
-		const TMatrix<real,3,5> kernel(CreateDerivativeKernel3x5());
-		cv::filter2D(img, grad[0], cv::DataType<real>::type, kernel);
-		cv::filter2D(img, grad[1], cv::DataType<real>::type, kernel.t());
-		#else
-		const TMatrix<real,5,7> kernel(CreateDerivativeKernel5x7());
-		cv::filter2D(img, grad[0], cv::DataType<real>::type, kernel);
-		cv::filter2D(img, grad[1], cv::DataType<real>::type, kernel.t());
-		#endif
-		mMag = (mGrad[0].cwiseAbs2()+mGrad[1].cwiseAbs2()).cwiseSqrt();
-		cv::Mat(img.rows, img.cols, cv::DataType<real>::type, (void*)mMag.data()).copyTo(views[ID].imageGradMag);
-	}
-	#ifdef TEXOPT_USE_OPENMP
-	return !bAbort;
-	#else
-	return true;
-	#endif
-}
-
 // extract array of triangles incident to each vertex
 // and check each vertex if it is at the boundary or not
 void MeshTexture::ListVertexFaces()
@@ -544,11 +475,11 @@ void MeshTexture::ListVertexFaces()
 }
 
 // extract array of faces viewed by each image
-void MeshTexture::ListCameraFaces(FaceDataViewArr& facesDatas, float fOutlierThreshold)
+bool MeshTexture::ListCameraFaces(FaceDataViewArr& facesDatas, float fOutlierThreshold)
 {
+	// create vertices octree
 	facesDatas.Resize(faces.GetSize());
 	typedef std::unordered_set<FIndex> CameraFaces;
-	CameraFaces cameraFaces;
 	struct FacesInserter {
 		FacesInserter(const Mesh::VertexFacesArr& _vertexFaces, CameraFaces& _cameraFaces)
 			: vertexFaces(_vertexFaces), cameraFaces(_cameraFaces) {}
@@ -571,68 +502,90 @@ void MeshTexture::ListCameraFaces(FaceDataViewArr& facesDatas, float fOutlierThr
 	octree.GetDebugInfo(&info);
 	Octree::LogDebugInfo(info);
 	#endif
+
+	// extract array of faces viewed by each image
+	Util::Progress progress(_T("Initialized views"), images.GetSize());
+	typedef float real;
+	TImage<real> imageGradMag;
+	TImage<real>::EMat mGrad[2];
 	FaceMap faceMap;
 	DepthMap depthMap;
-	#if TEXOPT_FACEOUTLIER != TEXOPT_FACEOUTLIER_NA
-	typedef CLISTDEF0IDX(uint32_t,FIndex) AreaArr;
-	AreaArr areas(faces.GetSize());
-	#endif
-	Point3 ptc[3]; Point2f pti[3];
-	FOREACH(idxView, images) {
-		const Image& imageData = images[idxView];
-		if (!imageData.IsValid())
+	#ifdef TEXOPT_USE_OPENMP
+	bool bAbort(false);
+	#pragma omp parallel for private(imageGradMag, mGrad, faceMap, depthMap)
+	for (int_t idx=0; idx<(int_t)images.GetSize(); ++idx) {
+		#pragma omp flush (bAbort)
+		if (bAbort) {
+			++progress;
 			continue;
+		}
+		const uint32_t idxView((uint32_t)idx);
+	#else
+	FOREACH(idxView, images) {
+	#endif
+		Image& imageData = images[idxView];
+		if (!imageData.IsValid()) {
+			++progress;
+			continue;
+		}
+		// load image
+		unsigned level(nResolutionLevel);
+		const unsigned imageSize(imageData.RecomputeMaxResolution(level, nMinResolution));
+		if ((imageData.image.empty() || MAXF(imageData.width,imageData.height) != imageSize) && !imageData.ReloadImage(imageSize)) {
+			#ifdef TEXOPT_USE_OPENMP
+			bAbort = true;
+			#pragma omp flush (bAbort)
+			continue;
+			#else
+			return false;
+			#endif
+		}
+		imageData.UpdateCamera(scene.platforms);
+		// compute gradient magnitude
+		imageData.image.toGray(imageGradMag, cv::COLOR_BGR2GRAY, true);
+		cv::Mat grad[2];
+		mGrad[0].resize(imageGradMag.rows, imageGradMag.cols);
+		grad[0] = cv::Mat(imageGradMag.rows, imageGradMag.cols, cv::DataType<real>::type, (void*)mGrad[0].data());
+		mGrad[1].resize(imageGradMag.rows, imageGradMag.cols);
+		grad[1] = cv::Mat(imageGradMag.rows, imageGradMag.cols, cv::DataType<real>::type, (void*)mGrad[1].data());
+		#if 1
+		cv::Sobel(imageGradMag, grad[0], cv::DataType<real>::type, 1, 0, 3, 1.0/8.0);
+		cv::Sobel(imageGradMag, grad[1], cv::DataType<real>::type, 0, 1, 3, 1.0/8.0);
+		#elif 1
+		const TMatrix<real,3,5> kernel(CreateDerivativeKernel3x5());
+		cv::filter2D(imageGradMag, grad[0], cv::DataType<real>::type, kernel);
+		cv::filter2D(imageGradMag, grad[1], cv::DataType<real>::type, kernel.t());
+		#else
+		const TMatrix<real,5,7> kernel(CreateDerivativeKernel5x7());
+		cv::filter2D(imageGradMag, grad[0], cv::DataType<real>::type, kernel);
+		cv::filter2D(imageGradMag, grad[1], cv::DataType<real>::type, kernel.t());
+		#endif
+		(TImage<real>::EMatMap)imageGradMag = (mGrad[0].cwiseAbs2()+mGrad[1].cwiseAbs2()).cwiseSqrt();
 		// select faces inside view frustum
-		typedef TFrustum<float,5> Frustum;
+		CameraFaces cameraFaces;
 		FacesInserter inserter(vertexFaces, cameraFaces);
+		typedef TFrustum<float,5> Frustum;
 		const Frustum frustum(Frustum::MATRIX3x4(((PMatrix::CEMatMap)imageData.camera.P).cast<float>()), (float)imageData.width, (float)imageData.height);
 		octree.Traverse(frustum, inserter);
 		// project all triangles in this view and keep the closest ones
-		const Camera& camera = imageData.camera;
 		faceMap.create(imageData.height, imageData.width);
-		faceMap.memset((uint8_t)NO_ID);
 		depthMap.create(imageData.height, imageData.width);
-		depthMap.memset(0);
-		RasterMeshData data = {camera, faceMap, depthMap};
+		RasterMesh rasterer(vertices, imageData.camera, depthMap, faceMap);
+		rasterer.Clear();
 		for (auto idxFace : cameraFaces) {
 			const Face& facet = faces[idxFace];
-			for (unsigned v=0; v<3; ++v) {
-				const Vertex& pt = vertices[facet[v]];
-				ptc[v] = camera.TransformPointW2C(Cast<REAL>(pt));
-				pti[v] = camera.TransformPointC2I(ptc[v]);
-				// skip face if not completely inside
-				if (!depthMap.isInsideWithBorder<float,3>(pti[v]))
-					goto CONTIUE2NEXTFACE;
-			}
-			{
-			// compute the face center, which is also the view to face vector
-			// (cause the face is in camera view space)
-			const Point3 faceCenter((ptc[0]+ptc[1]+ptc[2])/3);
-			// skip face if the (cos) angle between
-			// the view to face vector and the view direction is negative
-			if (faceCenter.z < 0)
-				continue;
-			// compute the plane defined by the 3 points
-			const Point3 edge1(ptc[1]-ptc[0]);
-			const Point3 edge2(ptc[2]-ptc[0]);
-			data.normalPlane = edge1.cross(edge2);
-			// skip face if the (cos) angle between
-			// the face normal and the face to view vector is negative
-			if (faceCenter.dot(data.normalPlane) > 0)
-				continue;
-			// prepare vector used to compute the depth during rendering
-			data.normalPlane *= INVERT(data.normalPlane.dot(ptc[0]));
-			// draw triangle and for each pixel compute depth as the ray intersection with the plane
-			data.idxFace = idxFace;
-			Image8U3::RasterizeTriangle(pti[0], pti[1], pti[2], data);
-			}
-			CONTIUE2NEXTFACE:;
+			rasterer.idxFace = idxFace;
+			rasterer.Project(facet);
 		}
 		// compute the projection area of visible faces
-		const View& view = views[idxView];
 		#if TEXOPT_FACEOUTLIER != TEXOPT_FACEOUTLIER_NA
+		CLISTDEF0IDX(uint32_t,FIndex) areas(faces.GetSize());
 		areas.Memset(0);
 		#endif
+		#ifdef TEXOPT_USE_OPENMP
+		#pragma omp critical
+		#endif
+		{
 		for (int j=0; j<faceMap.rows; ++j) {
 			for (int i=0; i<faceMap.cols; ++i) {
 				const FIndex& idxFace = faceMap(j,i);
@@ -649,7 +602,7 @@ void MeshTexture::ListCameraFaces(FaceDataViewArr& facesDatas, float fOutlierThr
 					// create new face-data
 					FaceData& faceData = faceDatas.AddEmpty();
 					faceData.idxView = idxView;
-					faceData.quality = view.imageGradMag(j,i);
+					faceData.quality = imageGradMag(j,i);
 					#if TEXOPT_FACEOUTLIER != TEXOPT_FACEOUTLIER_NA
 					faceData.color = imageData.image(j,i);
 					#endif
@@ -658,7 +611,7 @@ void MeshTexture::ListCameraFaces(FaceDataViewArr& facesDatas, float fOutlierThr
 					ASSERT(!faceDatas.IsEmpty());
 					FaceData& faceData = faceDatas.Last();
 					ASSERT(faceData.idxView == idxView);
-					faceData.quality += view.imageGradMag(j,i);
+					faceData.quality += imageGradMag(j,i);
 					#if TEXOPT_FACEOUTLIER != TEXOPT_FACEOUTLIER_NA
 					faceData.color += Color(imageData.image(j,i));
 					#endif
@@ -674,7 +627,14 @@ void MeshTexture::ListCameraFaces(FaceDataViewArr& facesDatas, float fOutlierThr
 			}
 		}
 		#endif
+		}
+		++progress;
 	}
+	#ifdef TEXOPT_USE_OPENMP
+	if (bAbort)
+		return false;
+	#endif
+	progress.close();
 
 	#if TEXOPT_FACEOUTLIER != TEXOPT_FACEOUTLIER_NA
 	if (fOutlierThreshold > 0) {
@@ -684,9 +644,7 @@ void MeshTexture::ListCameraFaces(FaceDataViewArr& facesDatas, float fOutlierThr
 			FaceOutlierDetection(*pFaceDatas, fOutlierThreshold);
 	}
 	#endif
-
-	// release image gradient magnitudes
-	views.Release();
+	return true;
 }
 
 #if TEXOPT_FACEOUTLIER == TEXOPT_FACEOUTLIER_MEDIAN
@@ -867,7 +825,7 @@ bool MeshTexture::FaceOutlierDetection(FaceDataArr& faceDatas, float thOutlier) 
 }
 #endif
 
-void MeshTexture::FaceViewSelection(float fOutlierThreshold, float fRatioDataSmoothness)
+bool MeshTexture::FaceViewSelection(float fOutlierThreshold, float fRatioDataSmoothness)
 {
 	// extract array of triangles incident to each vertex
 	ListVertexFaces();
@@ -876,30 +834,20 @@ void MeshTexture::FaceViewSelection(float fOutlierThreshold, float fRatioDataSmo
 	{
 		// list all views for each face
 		FaceDataViewArr facesDatas;
-		ListCameraFaces(facesDatas, fOutlierThreshold);
+		if (!ListCameraFaces(facesDatas, fOutlierThreshold))
+			return false;
 
 		// create faces graph
 		typedef boost::adjacency_list<boost::vecS, boost::vecS, boost::undirectedS> Graph;
-		typedef boost::graph_traits<Graph>::vertex_descriptor Vertex;
-		typedef boost::graph_traits<Graph>::edge_descriptor Edge;
 		typedef boost::graph_traits<Graph>::edge_iterator EdgeIter;
 		typedef boost::graph_traits<Graph>::out_edge_iterator EdgeOutIter;
-		struct Components {
-			static FIndex Find(const Graph& graph, Mesh::FaceIdxArr& components) {
-				FIndex nComponents(boost::connected_components(graph, components.Begin()));
-				#if 1
-				// assign a component to all faces left out of the graph (isolated)
-				for (FIndex nComp=(FIndex)boost::num_vertices(graph); nComp<components.GetSize(); ++nComp)
-					components[nComp] = nComponents++;
-				#endif
-				return nComponents;
-			}
-		};
 		Graph graph;
 		{
+			FOREACH(idxFace, faces) {
+				const Mesh::FIndex idx((Mesh::FIndex)boost::add_vertex(graph));
+				ASSERT(idx == idxFace);
+			}
 			Mesh::FaceIdxArr afaces;
-			std::unordered_set<PairIdx::PairIndex> setEdges;
-			setEdges.reserve(faces.GetSize()*2);
 			FOREACH(idxFace, faces) {
 				scene.mesh.GetFaceFaces(idxFace, afaces);
 				ASSERT(ISINSIDE((int)afaces.GetSize(), 1, 4));
@@ -914,11 +862,11 @@ void MeshTexture::FaceViewSelection(float fOutlierThreshold, float fRatioDataSmo
 							seamEdges.AddConstruct(idxFace, idxFaceAdj);
 						continue;
 					}
-					if (setEdges.insert(PairIdx(idxFace, idxFaceAdj).idx).second)
-						boost::add_edge(idxFace, *pIdxFace, graph);
+					boost::add_edge(idxFace, idxFaceAdj, graph);
 				}
 				afaces.Empty();
 			}
+			ASSERT((Mesh::FIndex)boost::num_vertices(graph) == faces.GetSize());
 		}
 
 		// assign the best view to each face
@@ -926,7 +874,7 @@ void MeshTexture::FaceViewSelection(float fOutlierThreshold, float fRatioDataSmo
 		components.Resize(faces.GetSize());
 		{
 			// find connected components
-			const FIndex nComponents(Components::Find(graph, components));
+			const FIndex nComponents(boost::connected_components(graph, components.Begin()));
 
 			// map face ID from global to component space
 			typedef cList<NodeID, NodeID, 0, 128, NodeID> NodeIDs;
@@ -1119,7 +1067,8 @@ void MeshTexture::FaceViewSelection(float fOutlierThreshold, float fRatioDataSmo
 				boost::remove_edge(pEdge->i, pEdge->j, graph);
 
 			// find connected components: texture patches
-			const FIndex nComponents(Components::Find(graph, components));
+			ASSERT((FIndex)boost::num_vertices(graph) == components.GetSize());
+			const FIndex nComponents(boost::connected_components(graph, components.Begin()));
 
 			// create texture patches;
 			// last texture patch contains all faces with no texture
@@ -1166,6 +1115,7 @@ void MeshTexture::FaceViewSelection(float fOutlierThreshold, float fRatioDataSmo
 				mapIdxPatch.Insert(numPatches);
 		}
 	}
+	return true;
 }
 
 
@@ -1253,8 +1203,9 @@ void MeshTexture::GlobalSeamLeveling()
 		patchIndex.idxSeamVertex = i;
 	}
 
-	// assign a row index within the solution vector x to each vertex and to each patch
-	size_t rowsX(0);
+	// assign a row index within the solution vector x to each vertex/patch
+	ASSERT(vertices.GetSize() < static_cast<VIndex>(std::numeric_limits<MatIdx>::max()));
+	MatIdx rowsX(0);
 	typedef std::unordered_map<uint32_t,MatIdx> VertexPatch2RowMap;
 	cList<VertexPatch2RowMap> vertpatch2rows(vertices.GetSize());
 	FOREACH(i, vertices) {
@@ -1266,22 +1217,20 @@ void MeshTexture::GlobalSeamLeveling()
 			ASSERT(seamVertex.idxVertex == i);
 			FOREACHPTR(pPatch, seamVertex.patches) {
 				ASSERT(pPatch->idxPatch != numPatches);
-				vertpatch2row[pPatch->idxPatch] = (MatIdx)rowsX++;
+				vertpatch2row[pPatch->idxPatch] = rowsX++;
 			}
 		} else
 		if (patchIndex.idxPatch < numPatches) {
 			// vertex is part of only one patch
-			vertpatch2row[patchIndex.idxPatch] = (MatIdx)rowsX++;
+			vertpatch2row[patchIndex.idxPatch] = rowsX++;
 		}
 	}
-	ASSERT(rowsX < static_cast<size_t>(std::numeric_limits<MatIdx>::max()));
-
-	CLISTDEF0(MatEntry) rows(0, vertices.GetSize()*4);
 
 	// fill Tikhonov's Gamma matrix (regularization constraints)
 	const float lambda(0.1f);
 	MatIdx rowsGamma(0);
 	Mesh::VertexIdxArr adjVerts;
+	CLISTDEF0(MatEntry) rows(0, vertices.GetSize()*4);
 	FOREACH(v, vertices) {
 		adjVerts.Empty();
 		scene.mesh.GetAdjVertices(v, adjVerts);
@@ -1308,9 +1257,9 @@ void MeshTexture::GlobalSeamLeveling()
 			}
 		}
 	}
-	ASSERT(rows.GetSize()/2 < static_cast<size_t>(std::numeric_limits<MatIdx>::max()));
+	ASSERT(rows.GetSize()/2 < static_cast<IDX>(std::numeric_limits<MatIdx>::max()));
 
-	SparseMat Gamma(rowsGamma, (MatIdx)rowsX);
+	SparseMat Gamma(rowsGamma, rowsX);
 	Gamma.setFromTriplets(rows.Begin(), rows.End());
 	rows.Empty();
 
@@ -1322,22 +1271,22 @@ void MeshTexture::GlobalSeamLeveling()
 		const SeamVertex& seamVertex = *pSeamVertex;
 		if (seamVertex.patches.GetSize() < 2)
 			continue;
-		const VertexPatch2RowMap& vertpatch2row = vertpatch2rows[seamVertex.idxVertex];
 		seamVertex.SortByPatchIndex(indices);
 		vertexColors.Resize(indices.GetSize());
 		FOREACH(i, indices) {
 			const SeamVertex::Patch& patch0 = seamVertex.patches[indices[i]];
 			ASSERT(patch0.idxPatch < numPatches);
-			SampleImage smapler(images[texturePatches[patch0.idxPatch].label].image);
+			SampleImage sampler(images[texturePatches[patch0.idxPatch].label].image);
 			FOREACHPTR(pEdge, patch0.edges) {
 				const SeamVertex& seamVertex1 = seamVertices[pEdge->idxSeamVertex];
 				const SeamVertex::Patches::IDX idxPatch1(seamVertex1.patches.Find(patch0.idxPatch));
 				ASSERT(idxPatch1 != SeamVertex::Patches::NO_INDEX);
 				const SeamVertex::Patch& patch1 = seamVertex1.patches[idxPatch1];
-				smapler.AddEdge(patch0.proj, patch1.proj);
+				sampler.AddEdge(patch0.proj, patch1.proj);
 			}
-			vertexColors[i] = smapler.GetColor();
+			vertexColors[i] = sampler.GetColor();
 		}
+		const VertexPatch2RowMap& vertpatch2row = vertpatch2rows[seamVertex.idxVertex];
 		for (IDX i=0; i<indices.GetSize()-1; ++i) {
 			const uint32_t idxPatch0(seamVertex.patches[indices[i]].idxPatch);
 			const Color& color0 = vertexColors[i];
@@ -1355,10 +1304,10 @@ void MeshTexture::GlobalSeamLeveling()
 			}
 		}
 	}
-	ASSERT(coeffB.GetSize() < static_cast<size_t>(std::numeric_limits<MatIdx>::max()));
+	ASSERT(coeffB.GetSize() < static_cast<IDX>(std::numeric_limits<MatIdx>::max()));
 
 	const MatIdx rowsA((MatIdx)coeffB.GetSize());
-	SparseMat A(rowsA, (MatIdx)rowsX);
+	SparseMat A(rowsA, rowsX);
 	A.setFromTriplets(rows.Begin(), rows.End());
 	rows.Release();
 
@@ -1671,7 +1620,7 @@ void MeshTexture::PoissonBlending(const Image32F3& src, Image32F3& dst, const Im
 			const MatIdx idx(indices(i));
 			ASSERT(idx != -1);
 			coeffA.AddConstruct(idx, idx, 1.f);
-			coeffB[idx] = Color(dst(i));
+			coeffB[idx] = (const Color&)dst(i);
 		} break;
 		case interior: {
 			const MatIdx idxUp(indices(i - width));
@@ -1850,7 +1799,7 @@ void MeshTexture::GenerateTexture(bool bGlobalSeamLeveling, bool bLocalSeamLevel
 		TexturePatch& texturePatch = *pTexturePatch;
 	#endif
 		const Image& imageData = images[texturePatch.label];
-		// project vertices and  compute bounding-box
+		// project vertices and compute bounding-box
 		AABB2f aabb(true);
 		FOREACHPTR(pIdxFace, texturePatch.faces) {
 			const FIndex idxFace(*pIdxFace);
@@ -2024,18 +1973,11 @@ bool Scene::TextureMesh(unsigned nResolutionLevel, unsigned nMinResolution, floa
 {
 	MeshTexture texture(*this, nResolutionLevel, nMinResolution);
 
-	// init images
-	{
-		TD_TIMER_STARTD();
-		if (!texture.InitImages())
-			return false;
-		DEBUG_EXTRA("Initializing images completed: %u images (%s)", images.GetSize(), TD_TIMER_GET_FMT().c_str());
-	}
-
 	// assign the best view to each face
 	{
 		TD_TIMER_STARTD();
-		texture.FaceViewSelection(fOutlierThreshold, fRatioDataSmoothness);
+		if (!texture.FaceViewSelection(fOutlierThreshold, fRatioDataSmoothness))
+			return false;
 		DEBUG_EXTRA("Assigning the best view to each face completed: %u faces (%s)", mesh.faces.GetSize(), TD_TIMER_GET_FMT().c_str());
 	}
 

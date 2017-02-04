@@ -36,6 +36,7 @@
 // I N C L U D E S /////////////////////////////////////////////////
 
 #include "Platform.h"
+#include "PointCloud.h"
 
 
 // D E F I N E S ///////////////////////////////////////////////////
@@ -46,10 +47,12 @@
 namespace MVS {
 
 // a mesh represented by a list vertices and triangles (faces)
-class Mesh
+class MVS_API Mesh
 {
 public:
-	typedef TPoint3<float> Vertex;
+	typedef float Type;
+
+	typedef TPoint3<Type> Vertex;
 	typedef uint32_t VIndex;
 	typedef TPoint3<VIndex> Face;
 	typedef uint32_t FIndex;
@@ -62,10 +65,10 @@ public:
 	typedef cList<VertexIdxArr> VertexVerticesArr;
 	typedef cList<FaceIdxArr> VertexFacesArr;
 
-	typedef TPoint3<float> Normal;
+	typedef TPoint3<Type> Normal;
 	typedef cList<Normal,const Normal&,0,8192,FIndex> NormalArr;
 
-	typedef TPoint2<float> TexCoord;
+	typedef TPoint2<Type> TexCoord;
 	typedef cList<TexCoord,const TexCoord&,0,8192,FIndex> TexCoordArr;
 
 	// used to find adjacent face
@@ -132,7 +135,9 @@ public:
 	void RemoveFaces(FaceIdxArr& facesRemove, bool bUpdateLists=false);
 	void RemoveVertices(VertexIdxArr& vertexRemove, bool bUpdateLists=false);
 
-	inline Normal FaceNormal(const Face& f) const { return ComputeTriangleNormal(vertices[f[0]], vertices[f[1]], vertices[f[2]]); }
+	inline Normal FaceNormal(const Face& f) const {
+		return ComputeTriangleNormal(vertices[f[0]], vertices[f[1]], vertices[f[2]]);
+	}
 	inline Normal VertexNormal(VIndex idxV) const {
 		ASSERT(vertices.GetSize() == vertexFaces.GetSize());
 		const FaceIdxArr& vf = vertexFaces[idxV];
@@ -142,6 +147,15 @@ public:
 			n += normalized(FaceNormal(faces[*pIdxF]));
 		return n;
 	}
+
+	REAL ComputeArea() const;
+	REAL ComputeVolume() const;
+
+	void Project(const Camera& camera, DepthMap& depthMap) const;
+	void Project(const Camera& camera, DepthMap& depthMap, Image8U3& image) const;
+	void ProjectOrtho(const Camera& camera, DepthMap& depthMap) const;
+	void ProjectOrtho(const Camera& camera, DepthMap& depthMap, Image8U3& image) const;
+	void ProjectOrthoTopDown(unsigned resolution, Image8U3& image, Image8U& mask, Point3& center) const;
 
 	// file IO
 	bool Load(const String& fileName);
@@ -179,6 +193,81 @@ protected:
 		ar & textureDiffuse;
 	}
 	#endif
+};
+/*----------------------------------------------------------------*/
+
+
+// used to render a mesh
+template <typename DERIVED>
+struct TRasterMesh {
+	const Mesh::VertexArr& vertices;
+	const Camera& camera;
+
+	DepthMap& depthMap;
+
+	Point3 normalPlane;
+	Point3 ptc[3];
+	Point2f pti[3];
+
+	TRasterMesh(const Mesh::VertexArr& _vertices, const Camera& _camera, DepthMap& _depthMap)
+		: vertices(_vertices), camera(_camera), depthMap(_depthMap) {}
+
+	inline void Clear() {
+		depthMap.memset(0);
+	}
+
+	inline bool ProjectVertex(const Mesh::Vertex& pt, int v) {
+		ptc[v] = camera.TransformPointW2C(Cast<REAL>(pt));
+		pti[v] = camera.TransformPointC2I(ptc[v]);
+		return depthMap.isInsideWithBorder<float,3>(pti[v]);
+	}
+	inline bool CheckNormal(const Point3& faceCenter) {
+		// skip face if the (cos) angle between
+		// the face normal and the face to view vector is negative
+		if (faceCenter.dot(normalPlane) >= ZEROTOLERANCE<REAL>())
+			return false;
+		// prepare vector used to compute the depth during rendering
+		normalPlane /= normalPlane.dot(ptc[0]);
+		return true;
+	}
+	void Project(const Mesh::Face& facet) {
+		// project face vertices to image plane
+		for (int v=0; v<3; ++v) {
+			// skip face if not completely inside
+			if (!static_cast<DERIVED*>(this)->ProjectVertex(vertices[facet[v]], v))
+				return;
+		}
+		// compute the face center, which is also the view to face vector
+		// (cause the face is in camera view space)
+		const Point3 faceCenter((ptc[0]+ptc[1]+ptc[2])/3);
+		// skip face if the (cos) angle between
+		// the view to face vector and the view direction is negative
+		if (faceCenter.z <= REAL(0))
+			return;
+		// compute the plane defined by the 3 points
+		const Point3 edge1(ptc[1]-ptc[0]);
+		const Point3 edge2(ptc[2]-ptc[0]);
+		normalPlane = edge1.cross(edge2);
+		// check the face is facing the camera and
+		// prepare vector used to compute the depth during rendering
+		if (!static_cast<DERIVED*>(this)->CheckNormal(faceCenter))
+			return;
+		// draw triangle and for each pixel compute depth as the ray intersection with the plane
+		Image8U3::RasterizeTriangle(pti[0], pti[1], pti[2], *this);
+	}
+
+	void Raster(const ImageRef& pt) {
+		if (!depthMap.isInsideWithBorder<float,3>(pt))
+			return;
+		const Depth z((Depth)INVERT(normalPlane.dot(camera.TransformPointI2C(Point2(pt)))));
+		ASSERT(z > 0);
+		Depth& depth = depthMap(pt);
+		if (depth == 0 || depth > z)
+			depth = z;
+	}
+	inline void operator()(const ImageRef& pt) {
+		static_cast<DERIVED*>(this)->Raster(pt);
+	}
 };
 /*----------------------------------------------------------------*/
 

@@ -52,7 +52,7 @@ namespace MVS {
 // the world and camera coordinates system is right handed,
 // with x pointing right, y pointing down, and z pointing forward
 // (see: R. Hartley, "Multiple View Geometry," 2004, pp. 156.)
-class CameraIntern
+class MVS_API CameraIntern
 {
 public:
 	KMatrix K; // the intrinsic camera parameters (3x3)
@@ -172,6 +172,21 @@ public:
 		return fullInvK;
 	}
 
+	// normalize inhomogeneous 2D point by the given camera intrinsics K
+	// K is assumed to be the [3,3] triangular matrix with: fx, fy, s, cx, cy and scale 1
+	template<typename TYPE1, typename TYPE2, typename TYPE3>
+	static inline void NormalizeProjection(const TYPE1* K, const TYPE2* x, TYPE3* n) {
+		n[0] = TYPE3(K[0]*x[0] + K[1]*x[1] + K[2]);
+		n[1] = TYPE3(            K[4]*x[1] + K[5]);
+	}
+	template <typename TYPE>
+	inline TPoint2<TYPE> NormalizeProjection(const TPoint2<TYPE>& proj) const {
+		TPoint2<TYPE> pt;
+		const TMatrix<TYPE,3,3> invK(GetInvK<TYPE>());
+		NormalizeProjection(invK.val, proj.ptr(), pt.ptr());
+		return pt;
+	}
+
 	#ifdef _USE_BOOST
 	// implement BOOST serialization
 	template <class Archive>
@@ -186,7 +201,7 @@ public:
 
 
 // same as above, plus caching the projection matrix
-class Camera : public CameraIntern
+class MVS_API Camera : public CameraIntern
 {
 public:
 	PMatrix P; // the composed projection matrix (3x4)
@@ -222,12 +237,14 @@ public:
 	template <typename TYPE>
 	inline TPoint2<TYPE> ProjectPointRT(const TPoint3<TYPE>& X) const {
 		const TPoint3<TYPE> q(R * (X - C));
-		return ((const TPoint2<TYPE>&)q)*INVERT(q.z);
+		const TYPE invZ(INVERT(q.z));
+		return TPoint2<TYPE>(q.x*invZ, q.y*invZ);
 	}
 	template <typename TYPE>
 	inline TPoint2<TYPE> ProjectPoint(const TPoint3<TYPE>& X) const {
 		const TPoint3<TYPE> q(K * (R * (X - C)));
-		return ((const TPoint2<TYPE>&)q)*INVERT(q.z);
+		const TYPE invZ(INVERT(q.z));
+		return TPoint2<TYPE>(q.x*invZ, q.y*invZ);
 	}
 	template <typename TYPE>
 	inline TPoint3<TYPE> ProjectPointP3(const TPoint3<TYPE>& X) const {
@@ -240,7 +257,8 @@ public:
 	template <typename TYPE>
 	inline TPoint2<TYPE> ProjectPointP(const TPoint3<TYPE>& X) const {
 		const TPoint3<TYPE> q(ProjectPointP3(X));
-		return ((const TPoint2<TYPE>&)q)*INVERT(q.z);
+		const TYPE invZ(INVERT(q.z));
+		return TPoint2<TYPE>(q.x*invZ, q.y*invZ);
 	}
 
 	// transform from image pixel coords to view plane coords
@@ -348,10 +366,10 @@ public:
 typedef SEACAVE::cList<Camera, const Camera&, 0> CameraArr;
 /*----------------------------------------------------------------*/
 
-void DecomposeProjectionMatrix(const PMatrix& P, KMatrix& K, RMatrix& R, CMatrix& C);
-void DecomposeProjectionMatrix(const PMatrix& P, RMatrix& R, CMatrix& C);
-void AssembleProjectionMatrix(const KMatrix& K, const RMatrix& R, const CMatrix& C, PMatrix& P);
-void AssembleProjectionMatrix(const RMatrix& R, const CMatrix& C, PMatrix& P);
+MVS_API void DecomposeProjectionMatrix(const PMatrix& P, KMatrix& K, RMatrix& R, CMatrix& C);
+MVS_API void DecomposeProjectionMatrix(const PMatrix& P, RMatrix& R, CMatrix& C);
+MVS_API void AssembleProjectionMatrix(const KMatrix& K, const RMatrix& R, const CMatrix& C, PMatrix& P);
+MVS_API void AssembleProjectionMatrix(const RMatrix& R, const CMatrix& C, PMatrix& P);
 /*----------------------------------------------------------------*/
 
 } // namespace MVS

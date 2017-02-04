@@ -149,7 +149,7 @@ void Log::_Record(UINT lt, LPCTSTR szFormat, va_list args)
 	#else
 	LPCTSTR const logType(lt<m_arrLogTypes.GetSize() ? m_arrLogTypes[lt] : g_appType);
 	#endif
-	if (_vsntprintf(szBuffer, 2047, szFormat, args) == -1) {
+	if ((size_t)_vsntprintf(szBuffer, 2048, szFormat, args) > 2048) {
 		// not enough space for the full string, reprint dynamically
 		m_message.FormatSafe("%s [%s] %s" LINE_SEPARATOR_STR, szTime, logType, String::FormatStringSafe(szFormat, args).c_str());
 	} else {

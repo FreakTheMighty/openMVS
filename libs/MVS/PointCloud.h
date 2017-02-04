@@ -46,9 +46,11 @@ namespace MVS {
 // a point-cloud containing the points with the corresponding views
 // and optionally weights, normals and colors
 // (same size as the number of points or zero)
-class PointCloud
+class MVS_API PointCloud
 {
 public:
+	typedef IDX Index;
+
 	typedef TPoint3<float> Point;
 	typedef SEACAVE::cList<Point,const Point&,2,8192> PointArr;
 
@@ -68,7 +70,7 @@ public:
 
 public:
 	PointArr points;
-	PointViewArr pointViews;
+	PointViewArr pointViews; // array of views for each point (ordered increasing)
 	PointWeightArr pointWeights;
 	NormalArr normals;
 	ColorArr colors;
@@ -78,10 +80,14 @@ public:
 
 	void Release();
 
-	inline bool IsEmpty() const { ASSERT(points.GetSize() == pointViews.GetSize()); return points.IsEmpty(); }
-	inline size_t GetSize() const { ASSERT(points.GetSize() == pointViews.GetSize()); return points.GetSize(); }
+	inline bool IsEmpty() const { ASSERT(points.GetSize() == pointViews.GetSize() || pointViews.IsEmpty()); return points.IsEmpty(); }
+	inline bool IsValid() const { ASSERT(points.GetSize() == pointViews.GetSize() || pointViews.IsEmpty()); return !pointViews.IsEmpty(); }
+	inline size_t GetSize() const { ASSERT(points.GetSize() == pointViews.GetSize() || pointViews.IsEmpty()); return points.GetSize(); }
 
-	bool Save(const String& fileName);
+	void RemovePoint(IDX idx);
+
+	bool Load(const String& fileName);
+	bool Save(const String& fileName) const;
 
 	#ifdef _USE_BOOST
 	// implement BOOST serialization
@@ -95,6 +101,18 @@ public:
 	}
 	#endif
 };
+/*----------------------------------------------------------------*/
+
+
+typedef MVS_API float Depth;
+typedef MVS_API Point3f Normal;
+typedef MVS_API TImage<Depth> DepthMap;
+typedef MVS_API TImage<Normal> NormalMap;
+typedef MVS_API TImage<float> ConfidenceMap;
+typedef MVS_API SEACAVE::cList<Depth,Depth,0> DepthArr;
+typedef MVS_API SEACAVE::cList<DepthMap,const DepthMap&,2> DepthMapArr;
+typedef MVS_API SEACAVE::cList<NormalMap,const NormalMap&,2> NormalMapArr;
+typedef MVS_API SEACAVE::cList<ConfidenceMap,const ConfidenceMap&,2> ConfidenceMapArr;
 /*----------------------------------------------------------------*/
 
 } // namespace MVS

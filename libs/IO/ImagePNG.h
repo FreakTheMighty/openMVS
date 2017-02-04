@@ -21,11 +21,13 @@ namespace SEACAVE {
 
 // S T R U C T S ///////////////////////////////////////////////////
 
-class GENERAL_API CImagePNG : public CImage
+class IO_API CImagePNG : public CImage
 {
 public:
 	CImagePNG();
 	virtual ~CImagePNG();
+
+	void		Close();
 
 	HRESULT		ReadHeader();
 	HRESULT		ReadData(void*, PIXELFORMAT, UINT nStride, UINT lineWidth);
@@ -35,6 +37,7 @@ public:
 protected:
 	void*		m_png_ptr;
 	void*		m_info_ptr;
+	bool		bRead;
 }; // class CImagePNG
 /*----------------------------------------------------------------*/
 

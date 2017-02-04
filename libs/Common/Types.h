@@ -28,7 +28,13 @@
 #include <string.h>
 #endif
 #ifdef _SUPPORT_CPP11
+#ifdef __clang__
+#include <stdint.h>
+#else
 #include <cstdint>
+#endif
+#include <cstddef>
+#include <type_traits>
 #include <initializer_list>
 #else
 #include <stdint.h>
@@ -51,6 +57,7 @@
 #include <list>
 #include <queue>
 #include <deque>
+#include <iterator>
 #include <cmath>
 #include <ctime>
 #ifdef _USE_OPENMP
@@ -72,7 +79,6 @@
 #endif
 
 // File-System utils (stlplus)
-#include "FileUtil.h"
 #include "Wildcard.h"
 
 // include usual boost libraries
@@ -109,14 +115,27 @@ namespace boost { void throw_exception(std::exception const&); }
 #endif
 
 #ifdef _USE_EIGEN
+#if defined(_MSC_VER)
+#pragma warning (push)
+#pragma warning (disable : 4244) // 'argument': conversion from '__int64' to 'int', possible loss of data
+#endif
 #include <Eigen/Core>
 #include <Eigen/Dense>
 #include <Eigen/Sparse>
-#include <Eigen/SVD>
 #include <Eigen/Geometry>
+#include <Eigen/Eigenvalues>
+#include <Eigen/SVD>
+#include <Eigen/QR>
+#include <Eigen/LU>
+#if defined(_MSC_VER)
+#pragma warning (pop)
+#endif
 #endif
 
+#include <opencv2/core/version.hpp>
+#if CV_MAJOR_VERSION > 2 || CV_MINOR_VERSION > 3
 #include <opencv2/opencv_modules.hpp>
+#endif
 #include <opencv2/opencv.hpp>
 #ifdef HAVE_OPENCV_GPU
 #if CV_MAJOR_VERSION > 2
@@ -215,7 +234,7 @@ typedef signed int			INT;
 typedef unsigned int		UINT;
 typedef long				LONG;
 
-typedef LONG				HRESULT;
+typedef int32_t				HRESULT;
 
 typedef CHAR*				LPSTR;
 typedef const CHAR*			LPCSTR;
@@ -236,6 +255,9 @@ typedef LPCSTR				LPCTSTR;
 #define _stprintf           sprintf
 #define _sntprintf          snprintf
 #define _vsntprintf         vsnprintf
+#define _vsctprintf         _vscprintf
+
+int _vscprintf(LPCSTR format, va_list pargs);
 
 #define _T(s)               s
 #endif //_MSC_VER
@@ -340,6 +362,8 @@ FORCEINLINE T RANDOM() { return (T(1)/RAND_MAX)*RAND(); }
 #include "Queue.h"
 #include "Hash.h"
 #include "Timer.h"
+#include "CriticalSection.h"
+#include "Semaphore.h"
 #include "Util.h"
 #include "File.h"
 #include "MemFile.h"
@@ -391,8 +415,6 @@ typedef class GENERAL_API cList<double, double, 0>      DoubleArr;
 } // namespace SEACAVE
 
 #include "Log.h"
-#include "CriticalSection.h"
-#include "Semaphore.h"
 #include "EventQueue.h"
 #include "SML.h"
 #include "ConfigTable.h"
@@ -462,26 +484,6 @@ typedef class GENERAL_API cList<double, double, 0>      DoubleArr;
 #ifndef ABORT
 #define ABORT(msg)			{ VERBOSE("error: " #msg); exit(-1); }
 #endif
-
-#if (defined(_MSC_VER) && _MSC_VER < 1800) || defined(__BORLANDC__)
-	/* MS C-runtime has functions which can be used in order to determine if
-	   a given floating-point variable contains NaN, (+-)INF. These are
-	   preferred, because floating-point technology is considered proprietary
-	   by MS and we can assume that their functions know more about their
-	   oddities than we do. */
-	#include <float.h>
-	/* Bjorn Reese figured a quite nice construct for isinf() using the _fpclass function. */
-	#ifndef isinf
-	template<typename _Tp>
-	inline int isinf(_Tp x) { return ((_fpclass(x) == _FPCLASS_PINF) ? 1 : ((_fpclass(x) == _FPCLASS_NINF) ? -1 : 0)); }
-	#endif
-	/* _isnan(x) returns nonzero if (x == NaN) and zero otherwise. */
-	#ifndef isnan
-	template<typename _Tp>
-	inline int isnan(_Tp x) { return (_isnan(x)); }
-	#endif
-#endif
-
 
 #ifndef _USE_MATH_DEFINES
 /** e */
@@ -640,10 +642,10 @@ inline int log2i(int val) {
 	}
 	return ret;
 }
-template <int N> inline int log2i() { return 1+log2i<(N>>1)>(); }
-template <> inline int log2i<0>() { return -1; }
-template <> inline int log2i<1>() { return 0; }
-template <> inline int log2i<2>() { return 1; }
+template <int N> constexpr inline int log2i() { return 1+log2i<(N>>1)>(); }
+template <>   constexpr inline int log2i<0>() { return -1; }
+template <>   constexpr inline int log2i<1>() { return 0; }
+template <>   constexpr inline int log2i<2>() { return 1; }
 
 template<typename T>
 inline T arithmeticSeries(T n, T a1=1, T d=1) {
@@ -1195,10 +1197,10 @@ public:
 /*----------------------------------------------------------------*/
 
 
-inline bool   ISINFORNAN(float x)			{ return (isinf(x) || isnan(x)); }
-inline bool   ISINFORNAN(double x)			{ return (isinf(x) || isnan(x)); }
-inline bool   ISFINITE(float x)				{ return (!isinf(x) && !isnan(x)); }
-inline bool   ISFINITE(double x)			{ return (!isinf(x) && !isnan(x)); }
+inline bool   ISINFORNAN(float x)			{ return (std::isinf(x) || std::isnan(x)); }
+inline bool   ISINFORNAN(double x)			{ return (std::isinf(x) || std::isnan(x)); }
+inline bool   ISFINITE(float x)				{ return (!std::isinf(x) && !std::isnan(x)); }
+inline bool   ISFINITE(double x)			{ return (!std::isinf(x) && !std::isnan(x)); }
 template<typename _Tp>
 inline bool   ISFINITE(const _Tp* x, size_t n)	{ for (size_t i=0; i<n; ++i) if (ISINFORNAN(x[i])) return false; return true; }
 
@@ -1224,6 +1226,13 @@ template<>
 inline float  ZEROTOLERANCE()				{ return FZERO_TOLERANCE; }
 template<>
 inline double ZEROTOLERANCE()				{ return ZERO_TOLERANCE; }
+
+template<typename _Tp>
+inline _Tp    EPSILONTOLERANCE()			{ return std::numeric_limits<_Tp>::epsilon(); }
+template<>
+inline float  EPSILONTOLERANCE()			{ return 0.00001f; }
+template<>
+inline double EPSILONTOLERANCE()			{ return 1e-10; }
 
 inline bool   ISZERO(float  x)				{ return Float(x).IsZero(); }
 inline bool   ISZERO(double x)				{ return ABS(x) < ZERO_TOLERANCE; }
@@ -1251,7 +1260,7 @@ typedef double REAL;
 template <typename TYPE, int m, int n> class TMatrix;
 template <typename TYPE, int DIMS> class TAABB;
 template <typename TYPE, int DIMS> class TRay;
-template <typename TYPE> class TPlane;
+template <typename TYPE, int DIMS> class TPlane;
 
 // 2D point struct
 template <typename TYPE>
@@ -1456,7 +1465,7 @@ public:
 
 	using Base::val;
 
-	static const int elems = m*n;
+	enum { elems = m*n };
 
 	static const TMatrix ZERO;
 	static const TMatrix IDENTITY;
@@ -1498,9 +1507,11 @@ public:
 	inline operator EMatMap () { return EMatMap((TYPE*)val); }
 	#endif
 
-	// calculate right/left null-vector of matrix A ([n,1])
+	// calculate right null-space of this matrix ([n,n-m])
+	inline TMatrix<TYPE,n,n-m> RightNullSpace(int flags = 0) const;
+	// calculate right/left null-vector of this matrix ([n/m,1])
 	inline TMatrix<TYPE,n,1> RightNullVector(int flags = 0) const;
-	inline TMatrix<TYPE,n,1> LeftNullVector(int flags = 0) const;
+	inline TMatrix<TYPE,m,1> LeftNullVector(int flags = 0) const;
 
 	#ifdef _USE_BOOST
 	// serialize
@@ -1842,10 +1853,28 @@ struct TPixel {
 	static const TPixel CYAN;
 	// init
 	inline TPixel() {}
-	template <typename T> inline TPixel(const TPixel<T>& p) : r(TYPE(p.r)), g(TYPE(p.g)), b(TYPE(p.b)) {}
-	inline TPixel(TYPE _r, TYPE _g, TYPE _b) : r(_r), g(_g), b(_b) {}
+	template <typename T> inline TPixel(const TPixel<T>& p)
+		#if _COLORMODE == _COLORMODE_BGR
+		: b(TYPE(p.b)), g(TYPE(p.g)), r(TYPE(p.r)) {}
+		#endif
+		#if _COLORMODE == _COLORMODE_RGB
+		: r(TYPE(p.r)), g(TYPE(p.g)), b(TYPE(p.b)) {}
+		#endif
+	inline TPixel(TYPE _r, TYPE _g, TYPE _b)
+		#if _COLORMODE == _COLORMODE_BGR
+		: b(_b), g(_g), r(_r) {}
+		#endif
+		#if _COLORMODE == _COLORMODE_RGB
+		: r(_r), g(_g), b(_b) {}
+		#endif
 	inline TPixel(const Pnt& col) : c0(col.x),  c1(col.y),  c2(col.z) {}
-	explicit inline TPixel(uint32_t col) : r((col>>16)&0xFF), g((col>>8)&0xFF), b(col&0xFF) {}
+	explicit inline TPixel(uint32_t col)
+		#if _COLORMODE == _COLORMODE_BGR
+		: b(TYPE(col&0xFF)), g(TYPE((col>>8)&0xFF)), r(TYPE((col>>16)&0xFF)) {}
+		#endif
+		#if _COLORMODE == _COLORMODE_RGB
+		: r(TYPE((col>>16)&0xFF)), g(TYPE((col>>8)&0xFF)), b(TYPE(col&0xFF)) {}
+		#endif
 	// set/get from default type
 	inline void set(TYPE _r, TYPE _g, TYPE _b) { r = _r; g = _g; b = _b; }
 	inline void set(const TYPE* clr) { c[0] = clr[0]; c[1] = clr[1]; c[2] = clr[2]; }
@@ -1941,16 +1970,22 @@ struct TColor {
 	static const TColor CYAN;
 	// init
 	inline TColor() {}
-	template <typename T> inline TColor(const TColor<T>& p) : r(TYPE(p.r)), g(TYPE(p.g)), b(TYPE(p.b)), a(TYPE(p.a)) {}
-	inline TColor(TYPE _r, TYPE _g, TYPE _b, TYPE _a=ColorType<TYPE>::ONE) : r(_r), g(_g), b(_b), a(_a) {}
-	inline TColor(const Pxl& col, TYPE _a=ColorType<TYPE>::ONE) : r(col.r),  g(col.g),  b(col.b), a(_a) {}
+	template <typename T> inline TColor(const TColor<T>& p)
+		: r(TYPE(p.r)), g(TYPE(p.g)), b(TYPE(p.b)), a(TYPE(p.a)) {}
+	inline TColor(TYPE _r, TYPE _g, TYPE _b, TYPE _a=ColorType<TYPE>::ONE)
+		: r(_r), g(_g), b(_b), a(_a) {}
+	inline TColor(const Pxl& col, TYPE _a=ColorType<TYPE>::ONE)
+		: r(col.r),  g(col.g),  b(col.b), a(_a) {}
 	#if _COLORMODE == _COLORMODE_BGR
-	inline TColor(const Pnt& col, TYPE _a=ColorType<TYPE>::ONE) : b(col.x),  g(col.y),  r(col.z),  a(_a) {}
+	inline TColor(const Pnt& col, TYPE _a=ColorType<TYPE>::ONE)
+		: b(col.x),  g(col.y),  r(col.z),  a(_a) {}
 	#endif
 	#if _COLORMODE == _COLORMODE_RGB
-	inline TColor(const Pnt& col, TYPE _a=ColorType<TYPE>::ONE) : r(col.x),  g(col.y),  b(col.z),  a(_a) {}
+	inline TColor(const Pnt& col, TYPE _a=ColorType<TYPE>::ONE)
+		: r(col.x),  g(col.y),  b(col.z),  a(_a) {}
 	#endif
-	explicit inline TColor(uint32_t col) : r((col>>16)&0xFF), g((col>>8)&0xFF), b(col&0xFF), a((col>>24)&0xFF) {}
+	explicit inline TColor(uint32_t col)
+		: r(TYPE((col>>16)&0xFF)), g(TYPE((col>>8)&0xFF)), b(TYPE(col&0xFF)), a(TYPE((col>>24)&0xFF)) {}
 	// set/get from default type
 	inline void set(TYPE _r, TYPE _g, TYPE _b, TYPE _a=ColorType<TYPE>::ONE) { r = _r; g = _g; b = _b; a = _a; }
 	inline void set(const TYPE* clr) { c[0] = clr[0]; c[1] = clr[1]; c[2] = clr[2]; c[3] = clr[3]; }
@@ -2124,8 +2159,8 @@ public:
 		inline Index(size_t _idx, Type _flag) : idx(_idx), flag(_flag) {}
 	};
 
-	static const int numBitsPerCell = sizeof(Type)*8;
-	static const int numBitsShift;
+	enum { numBitsPerCell = sizeof(Type)*8 };
+	enum { numBitsShift = log2i<TBitMatrix::numBitsPerCell>() };
 
 public:
 	inline TBitMatrix() : data(NULL) {}
@@ -2147,7 +2182,7 @@ public:
 		data = new Type[length()];
 	}
 	inline void create(const Size& sz) { create(sz.height, sz.width); }
-	inline void release() { if (data) { delete[] data; data = NULL; } }
+	inline void release() { delete[] data; data = NULL; }
 	inline void memset(uint8_t v) { ASSERT(!empty()); ::memset(data, v, sizeof(Type)*length()); }
 	inline void swap(TBitMatrix& m) {
 		union {int i; Type* d;} tmp;
@@ -2243,6 +2278,7 @@ public:
 #ifdef _USE_BOOST
 protected:
 	// implement BOOST serialization
+	friend class boost::serialization::access;
 	template<class Archive>
 	void save(Archive& ar, const unsigned int /*version*/) const {
 		if (empty()) {
@@ -2252,17 +2288,17 @@ protected:
 		}
 		ar & cols;
 		ar & rows;
-		ar & boost::serialization::make_array(data, sizeof(Type)*length());
+		ar & boost::serialization::make_array(data, length());
 	}
 	template<class Archive>
 	void load(Archive& ar, const unsigned int /*version*/) {
+		release();
 		ar & cols;
-		if (cols == 0) {
-			data = NULL;
+		if (cols == 0)
 			return;
-		}
 		ar & rows;
-		ar & boost::serialization::make_array(data, sizeof(Type)*length());
+		create(rows, cols);
+		ar & boost::serialization::make_array(data, length());
 	}
 	BOOST_SERIALIZATION_SPLIT_MEMBER()
 #endif
@@ -2687,6 +2723,7 @@ protected:
 
 #include "Types.inl"
 #include "Rotation.h"
+#include "Sphere.h"
 #include "AABB.h"
 #include "OBB.h"
 #include "Plane.h"

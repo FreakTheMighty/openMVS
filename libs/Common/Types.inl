@@ -9,35 +9,294 @@
 // D E F I N E S ///////////////////////////////////////////////////
 
 
-namespace SEACAVE {
-
 // S T R U C T S ///////////////////////////////////////////////////
 
+namespace std {
+
+//namespace tr1 {
+// Specializations for unordered containers
+template <> struct hash<SEACAVE::ImageRef>
+{
+	typedef SEACAVE::ImageRef argument_type;
+	typedef size_t result_type;
+	result_type operator()(const argument_type& v) const {
+		return std::hash<uint64_t>()((const uint64_t&)v);
+	}
+};
+//} // namespace tr1
+
+} // namespace std
+
+
+namespace cv {
+
+#if CV_MAJOR_VERSION > 2
+template<> class DataType<unsigned>
+{
+public:
+	typedef unsigned    value_type;
+	typedef value_type  work_type;
+	typedef value_type  channel_type;
+	typedef value_type  vec_type;
+	enum { generic_type = 0,
+		depth        = CV_32S,
+		channels     = 1,
+		fmt          = (int)'i',
+		type         = CV_MAKETYPE(depth, channels)
+	};
+};
+
+template <typename REAL_TYPE, typename INT_TYPE>
+INT_TYPE cvRANSACUpdateNumIters(REAL_TYPE p, REAL_TYPE ep, INT_TYPE modelPoints, INT_TYPE maxIters)
+{
+	ASSERT(p>=0 && p<=1);
+	ASSERT(ep>=0 && ep<=1);
+
+	// avoid inf's & nan's
+	REAL_TYPE num = MAXF(REAL_TYPE(1)-p, DBL_MIN);
+	REAL_TYPE denom = REAL_TYPE(1)-powi(REAL_TYPE(1)-ep, modelPoints);
+	if (denom < REAL_TYPE(DBL_MIN))
+		return 0;
+
+	num = log(num);
+	denom = log(denom);
+
+	return (denom >= 0 || -num >= (-denom)*maxIters ? maxIters : ROUND2INT(num/denom));
+}
+#else
+#if CV_MINOR_VERSION < 4
+template<typename _Tp, typename _AccTp> static inline
+_AccTp normL2Sqr(const _Tp* a, int n)
+{
+	_AccTp s = 0;
+	int i=0;
+	#if CV_ENABLE_UNROLLED
+	for (; i <= n - 4; i += 4) {
+		_AccTp v0 = a[i], v1 = a[i+1], v2 = a[i+2], v3 = a[i+3];
+		s += v0*v0 + v1*v1 + v2*v2 + v3*v3;
+	}
+	#endif
+	for (; i < n; i++) {
+		_AccTp v = a[i];
+		s += v*v;
+	}
+	return s;
+}
+#endif
+
+#if CV_MINOR_VERSION < 4 || CV_SUBMINOR_VERSION < 11
+// Convenience creation functions. In the far future, there may be variadic templates here.
+template<typename T>
+Ptr<T> makePtr()
+{
+	return Ptr<T>(new T());
+}
+template<typename T, typename A1>
+Ptr<T> makePtr(const A1& a1)
+{
+	return Ptr<T>(new T(a1));
+}
+template<typename T, typename A1, typename A2>
+Ptr<T> makePtr(const A1& a1, const A2& a2)
+{
+	return Ptr<T>(new T(a1, a2));
+}
+template<typename T, typename A1, typename A2, typename A3>
+Ptr<T> makePtr(const A1& a1, const A2& a2, const A3& a3)
+{
+	return Ptr<T>(new T(a1, a2, a3));
+}
+template<typename T, typename A1, typename A2, typename A3, typename A4>
+Ptr<T> makePtr(const A1& a1, const A2& a2, const A3& a3, const A4& a4)
+{
+	return Ptr<T>(new T(a1, a2, a3, a4));
+}
+template<typename T, typename A1, typename A2, typename A3, typename A4, typename A5>
+Ptr<T> makePtr(const A1& a1, const A2& a2, const A3& a3, const A4& a4, const A5& a5)
+{
+	return Ptr<T>(new T(a1, a2, a3, a4, a5));
+}
+template<typename T, typename A1, typename A2, typename A3, typename A4, typename A5, typename A6>
+Ptr<T> makePtr(const A1& a1, const A2& a2, const A3& a3, const A4& a4, const A5& a5, const A6& a6)
+{
+	return Ptr<T>(new T(a1, a2, a3, a4, a5, a6));
+}
+template<typename T, typename A1, typename A2, typename A3, typename A4, typename A5, typename A6, typename A7>
+Ptr<T> makePtr(const A1& a1, const A2& a2, const A3& a3, const A4& a4, const A5& a5, const A6& a6, const A7& a7)
+{
+	return Ptr<T>(new T(a1, a2, a3, a4, a5, a6, a7));
+}
+template<typename T, typename A1, typename A2, typename A3, typename A4, typename A5, typename A6, typename A7, typename A8>
+Ptr<T> makePtr(const A1& a1, const A2& a2, const A3& a3, const A4& a4, const A5& a5, const A6& a6, const A7& a7, const A8& a8)
+{
+	return Ptr<T>(new T(a1, a2, a3, a4, a5, a6, a7, a8));
+}
+template<typename T, typename A1, typename A2, typename A3, typename A4, typename A5, typename A6, typename A7, typename A8, typename A9>
+Ptr<T> makePtr(const A1& a1, const A2& a2, const A3& a3, const A4& a4, const A5& a5, const A6& a6, const A7& a7, const A8& a8, const A9& a9)
+{
+	return Ptr<T>(new T(a1, a2, a3, a4, a5, a6, a7, a8, a9));
+}
+template<typename T, typename A1, typename A2, typename A3, typename A4, typename A5, typename A6, typename A7, typename A8, typename A9, typename A10>
+Ptr<T> makePtr(const A1& a1, const A2& a2, const A3& a3, const A4& a4, const A5& a5, const A6& a6, const A7& a7, const A8& a8, const A9& a9, const A10& a10)
+{
+	return Ptr<T>(new T(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10));
+}
+#endif
+
+// property implementation macros
+#define CV_IMPL_PROPERTY_RO(type, name, member) \
+	inline type get##name() const { return member; }
+
+#define CV_HELP_IMPL_PROPERTY(r_type, w_type, name, member) \
+	CV_IMPL_PROPERTY_RO(r_type, name, member) \
+	inline void set##name(w_type val) { member = val; }
+
+#define CV_HELP_WRAP_PROPERTY(r_type, w_type, name, internal_name, internal_obj) \
+	r_type get##name() const { return internal_obj.get##internal_name(); } \
+	void set##name(w_type val) { internal_obj.set##internal_name(val); }
+
+#define CV_IMPL_PROPERTY(type, name, member) CV_HELP_IMPL_PROPERTY(type, type, name, member)
+#define CV_IMPL_PROPERTY_S(type, name, member) CV_HELP_IMPL_PROPERTY(type, const type &, name, member)
+
+#define CV_WRAP_PROPERTY(type, name, internal_name, internal_obj)  CV_HELP_WRAP_PROPERTY(type, type, name, internal_name, internal_obj)
+#define CV_WRAP_PROPERTY_S(type, name, internal_name, internal_obj) CV_HELP_WRAP_PROPERTY(type, const type &, name, internal_name, internal_obj)
+
+#define CV_WRAP_SAME_PROPERTY(type, name, internal_obj) CV_WRAP_PROPERTY(type, name, name, internal_obj)
+#define CV_WRAP_SAME_PROPERTY_S(type, name, internal_obj) CV_WRAP_PROPERTY_S(type, name, name, internal_obj)
+#endif
+
+//! copy every second source image element to the destination image
+inline void downsample2x(InputArray _src, OutputArray _dst)
+{
+	Mat src(_src.getMat());
+	#if 1
+	_dst.create((src.rows+1)/2, (src.cols+1)/2, src.type());
+	#else
+	if (_dst.empty()) {
+		// create a new matrix
+		_dst.create(src.rows/2, src.cols/2, src.type());
+	} else {
+		// overwrite elements in the existing matrix
+		ASSERT(src.rows > 0 && (unsigned)(src.rows-_dst.size().height*2) <= 1);
+		ASSERT(src.cols > 0 && (unsigned)(src.cols-_dst.size().width*2) <= 1);
+		ASSERT(src.type() == _dst.type());
+	}
+	#endif
+	Mat dst(_dst.getMat());
+	ASSERT(src.elemSize() == dst.elemSize());
+	switch (src.elemSize()) {
+	case 1:
+		for (int i=0; i<dst.rows; ++i)
+			for (int j=0; j<dst.cols; ++j)
+				dst.at<uint8_t>(i,j) = src.at<uint8_t>(2*i,2*j);
+		break;
+	case 2:
+		for (int i=0; i<dst.rows; ++i)
+			for (int j=0; j<dst.cols; ++j)
+				dst.at<uint16_t>(i,j) = src.at<uint16_t>(2*i,2*j);
+		break;
+	case 4:
+		for (int i=0; i<dst.rows; ++i)
+			for (int j=0; j<dst.cols; ++j)
+				dst.at<float>(i,j) = src.at<float>(2*i,2*j);
+		break;
+	case 8:
+		for (int i=0; i<dst.rows; ++i)
+			for (int j=0; j<dst.cols; ++j)
+				dst.at<double>(i,j) = src.at<double>(2*i,2*j);
+		break;
+	default:
+		for (int i=0; i<dst.rows; ++i)
+			for (int j=0; j<dst.cols; ++j)
+				memcpy(dst.ptr(i,j), src.ptr(2*i,2*j), src.elemSize());
+	}
+}
+//! copy elements of source image to the 2 x position in the destination image
+inline void upsample2x(InputArray _src, OutputArray _dst)
+{
+	Mat src(_src.getMat());
+	if (_dst.empty()) {
+		// create a new matrix
+		_dst.create(src.rows*2, src.cols*2, src.type());
+	} else {
+		// overwrite only new elements in the existing matrix
+		ASSERT(src.rows > 0 && src.rows*2-1 <= _dst.size().height);
+		ASSERT(src.cols > 0 && src.cols*2-1 <= _dst.size().width);
+		ASSERT(src.type() == _dst.type());
+	}
+	Mat dst(_dst.getMat());
+	ASSERT(src.elemSize() == dst.elemSize());
+	switch (src.elemSize()) {
+	case 1:
+		for (int i=0; i<src.rows; ++i)
+			for (int j=0; j<src.cols; ++j)
+				dst.at<uint8_t>(2*i,2*j) = src.at<uint8_t>(i,j);
+		break;
+	case 2:
+		for (int i=0; i<src.rows; ++i)
+			for (int j=0; j<src.cols; ++j)
+				dst.at<uint16_t>(2*i,2*j) = src.at<uint16_t>(i,j);
+		break;
+	case 4:
+		for (int i=0; i<src.rows; ++i)
+			for (int j=0; j<src.cols; ++j)
+				dst.at<float>(2*i,2*j) = src.at<float>(i,j);
+		break;
+	case 8:
+		for (int i=0; i<src.rows; ++i)
+			for (int j=0; j<src.cols; ++j)
+				dst.at<double>(2*i,2*j) = src.at<double>(i,j);
+		break;
+	default:
+		for (int i=0; i<src.rows; ++i)
+			for (int j=0; j<src.cols; ++j)
+				memcpy(dst.ptr(2*i,2*j), src.ptr(i,j), src.elemSize());
+	}
+}
+
+} // namespace cv
+
+
+namespace SEACAVE {
 
 // G L O B A L S ///////////////////////////////////////////////////
 
 template <typename TYPE> const typename ColorType<TYPE>::value_type ColorType<TYPE>::ONE(1);
 template <typename TYPE> const typename ColorType<TYPE>::alt_type ColorType<TYPE>::ALTONE(1);
 
-template <typename TYPE> const TPixel<TYPE> TPixel<TYPE>::BLACK		(0.f, 0.f, 0.f);
+template <typename TYPE> const TPixel<TYPE> TPixel<TYPE>::BLACK		(0, 0, 0);
 template <typename TYPE> const TPixel<TYPE> TPixel<TYPE>::WHITE		(ColorType<TYPE>::ONE, ColorType<TYPE>::ONE, ColorType<TYPE>::ONE);
 template <typename TYPE> const TPixel<TYPE> TPixel<TYPE>::GRAY		(0.8f*ColorType<TYPE>::ONE, 0.8f*ColorType<TYPE>::ONE, 0.8f*ColorType<TYPE>::ONE);
-template <typename TYPE> const TPixel<TYPE> TPixel<TYPE>::RED		(ColorType<TYPE>::ONE, 0.f, 0.f);
-template <typename TYPE> const TPixel<TYPE> TPixel<TYPE>::GREEN		(0.f, ColorType<TYPE>::ONE, 0.f);
-template <typename TYPE> const TPixel<TYPE> TPixel<TYPE>::BLUE		(0.f, 0.f, ColorType<TYPE>::ONE);
-template <typename TYPE> const TPixel<TYPE> TPixel<TYPE>::YELLOW	(ColorType<TYPE>::ONE, ColorType<TYPE>::ONE, 0.f);
-template <typename TYPE> const TPixel<TYPE> TPixel<TYPE>::MAGENTA	(ColorType<TYPE>::ONE, 0.f, ColorType<TYPE>::ONE);
-template <typename TYPE> const TPixel<TYPE> TPixel<TYPE>::CYAN		(0.f, ColorType<TYPE>::ONE, ColorType<TYPE>::ONE);
+template <typename TYPE> const TPixel<TYPE> TPixel<TYPE>::RED		(ColorType<TYPE>::ONE, 0, 0);
+template <typename TYPE> const TPixel<TYPE> TPixel<TYPE>::GREEN		(0, ColorType<TYPE>::ONE, 0);
+template <typename TYPE> const TPixel<TYPE> TPixel<TYPE>::BLUE		(0, 0, ColorType<TYPE>::ONE);
+template <typename TYPE> const TPixel<TYPE> TPixel<TYPE>::YELLOW	(ColorType<TYPE>::ONE, ColorType<TYPE>::ONE, 0);
+template <typename TYPE> const TPixel<TYPE> TPixel<TYPE>::MAGENTA	(ColorType<TYPE>::ONE, 0, ColorType<TYPE>::ONE);
+template <typename TYPE> const TPixel<TYPE> TPixel<TYPE>::CYAN		(0, ColorType<TYPE>::ONE, ColorType<TYPE>::ONE);
 
-template <typename TYPE> const TColor<TYPE> TColor<TYPE>::BLACK		(0.f, 0.f, 0.f, ColorType<TYPE>::ONE);
+template <typename TYPE> const TColor<TYPE> TColor<TYPE>::BLACK		(0, 0, 0, ColorType<TYPE>::ONE);
 template <typename TYPE> const TColor<TYPE> TColor<TYPE>::WHITE		(ColorType<TYPE>::ONE, ColorType<TYPE>::ONE, ColorType<TYPE>::ONE, ColorType<TYPE>::ONE);
 template <typename TYPE> const TColor<TYPE> TColor<TYPE>::GRAY		(0.8f*ColorType<TYPE>::ONE, 0.8f*ColorType<TYPE>::ONE, 0.8f*ColorType<TYPE>::ONE, ColorType<TYPE>::ONE);
-template <typename TYPE> const TColor<TYPE> TColor<TYPE>::RED		(ColorType<TYPE>::ONE, 0.f, 0.f, ColorType<TYPE>::ONE);
-template <typename TYPE> const TColor<TYPE> TColor<TYPE>::GREEN		(0.f, ColorType<TYPE>::ONE, 0.f, ColorType<TYPE>::ONE);
-template <typename TYPE> const TColor<TYPE> TColor<TYPE>::BLUE		(0.f, 0.f, ColorType<TYPE>::ONE, ColorType<TYPE>::ONE);
-template <typename TYPE> const TColor<TYPE> TColor<TYPE>::YELLOW	(ColorType<TYPE>::ONE, ColorType<TYPE>::ONE, 0.f, ColorType<TYPE>::ONE);
-template <typename TYPE> const TColor<TYPE> TColor<TYPE>::MAGENTA	(ColorType<TYPE>::ONE, 0.f, ColorType<TYPE>::ONE, ColorType<TYPE>::ONE);
-template <typename TYPE> const TColor<TYPE> TColor<TYPE>::CYAN		(0.f, ColorType<TYPE>::ONE, ColorType<TYPE>::ONE, ColorType<TYPE>::ONE);
+template <typename TYPE> const TColor<TYPE> TColor<TYPE>::RED		(ColorType<TYPE>::ONE, 0, 0, ColorType<TYPE>::ONE);
+template <typename TYPE> const TColor<TYPE> TColor<TYPE>::GREEN		(0, ColorType<TYPE>::ONE, 0, ColorType<TYPE>::ONE);
+template <typename TYPE> const TColor<TYPE> TColor<TYPE>::BLUE		(0, 0, ColorType<TYPE>::ONE, ColorType<TYPE>::ONE);
+template <typename TYPE> const TColor<TYPE> TColor<TYPE>::YELLOW	(ColorType<TYPE>::ONE, ColorType<TYPE>::ONE, 0, ColorType<TYPE>::ONE);
+template <typename TYPE> const TColor<TYPE> TColor<TYPE>::MAGENTA	(ColorType<TYPE>::ONE, 0, ColorType<TYPE>::ONE, ColorType<TYPE>::ONE);
+template <typename TYPE> const TColor<TYPE> TColor<TYPE>::CYAN		(0, ColorType<TYPE>::ONE, ColorType<TYPE>::ONE, ColorType<TYPE>::ONE);
+
+#ifdef _SUPPORT_CPP11
+template <typename A>
+inline typename std::enable_if<std::is_array<A>::value, size_t>::type
+SizeOfArray(const A&) {
+	return std::extent<A>::value;
+}
+#else
+template <typename T, size_t N>
+inline size_t
+SizeOfArray(const T(&)[N]) {
+	return N;
+}
+#endif
 
 
 // C L A S S  //////////////////////////////////////////////////////
@@ -503,11 +762,11 @@ inline TYPE dot(const cv::Vec<TYPE,m>* v1, const cv::Vec<TYPE,m>* v2, size_t siz
 
 template <typename TYPE, int m, int n>
 inline TMatrix<TYPE,m,n> cross(const TMatrix<TYPE,m,n>& l, const TMatrix<TYPE,m,n>& r) {
-	return static_cast<cv::Matx<TYPE,m,n>&>(((const typename TMatrix<TYPE,m*n,1>::Vec&)l).cross((const typename TMatrix<TYPE,m*n,1>::Vec&)r));
+	return ((const typename TMatrix<TYPE,m*n,1>::Vec&)l).cross((const typename TMatrix<TYPE,m*n,1>::Vec&)r);
 }
 template <typename TYPE, int m, int n>
 inline TMatrix<TYPE,m,n> cross(const cv::Matx<TYPE,m,n>& l, const cv::Matx<TYPE,m,n>& r) {
-	return static_cast<cv::Matx<TYPE,m,n>&>(((const typename TMatrix<TYPE,m*n,1>::Vec&)l).cross((const typename TMatrix<TYPE,m*n,1>::Vec&)r));
+	return ((const typename TMatrix<TYPE,m*n,1>::Vec&)l).cross((const typename TMatrix<TYPE,m*n,1>::Vec&)r);
 }
 
 template <typename TYPE>
@@ -781,11 +1040,11 @@ inline TPoint3<TYPE> normalized(const cv::Point3_<TYPE>& v) {
 }
 template <typename TYPE, int m, int n>
 inline TMatrix<TYPE,m,n> normalized(const TMatrix<TYPE,m,n>& v) {
-	return static_cast<cv::Matx<TYPE,m,n>&>(cv::normalize((const typename TMatrix<TYPE,m*n,1>::Vec&)v));
+	return cv::normalize((const typename TMatrix<TYPE,m*n,1>::Vec&)v);
 }
 template <typename TYPE, int m, int n>
 inline TMatrix<TYPE,m,n> normalized(const cv::Matx<TYPE,m,n>& v) {
-	return static_cast<cv::Matx<TYPE,m,n>&>(cv::normalize((const typename TMatrix<TYPE,m*n,1>::Vec&)v));
+	return cv::normalize((const typename TMatrix<TYPE,m*n,1>::Vec&)v);
 }
 
 template <typename TYPE>
@@ -1185,232 +1444,9 @@ FORCEINLINE SEACAVE::TColor<TYPE> operator/(TYPEM n, const SEACAVE::TColor<TYPE>
 } // namespace SEACAVE
 
 
-namespace std {
-
-//namespace tr1 {
-// Specializations for unordered containers
-template <> struct hash<SEACAVE::ImageRef>
-{
-	typedef SEACAVE::ImageRef argument_type;
-	typedef size_t result_type;
-	result_type operator()(const argument_type& v) const {
-		return std::hash<uint64_t>()((const uint64_t&)v);
-	}
-};
-//} // namespace tr1
-
-} // namespace std
-
-
-namespace cv {
-
-#if CV_MAJOR_VERSION > 2
-template<> class DataType<unsigned>
-{
-public:
-	typedef unsigned    value_type;
-	typedef value_type  work_type;
-	typedef value_type  channel_type;
-	typedef value_type  vec_type;
-	enum { generic_type = 0,
-		depth        = CV_32S,
-		channels     = 1,
-		fmt          = (int)'i',
-		type         = CV_MAKETYPE(depth, channels)
-	};
-};
-
-template <typename REAL_TYPE, typename INT_TYPE>
-INT_TYPE cvRANSACUpdateNumIters(REAL_TYPE p, REAL_TYPE ep, INT_TYPE modelPoints, INT_TYPE maxIters)
-{
-	ASSERT(p>=0 && p<=1);
-	ASSERT(ep>=0 && ep<=1);
-
-	// avoid inf's & nan's
-	REAL_TYPE num = MAXF(REAL_TYPE(1)-p, DBL_MIN);
-	REAL_TYPE denom = REAL_TYPE(1)-powi(REAL_TYPE(1)-ep, modelPoints);
-	if (denom < REAL_TYPE(DBL_MIN))
-		return 0;
-
-	num = log(num);
-	denom = log(denom);
-
-	return (denom >= 0 || -num >= (-denom)*maxIters ? maxIters : ROUND2INT(num/denom));
-}
-#else
-// Convenience creation functions. In the far future, there may be variadic templates here.
-template<typename T>
-Ptr<T> makePtr()
-{
-	return Ptr<T>(new T());
-}
-template<typename T, typename A1>
-Ptr<T> makePtr(const A1& a1)
-{
-	return Ptr<T>(new T(a1));
-}
-template<typename T, typename A1, typename A2>
-Ptr<T> makePtr(const A1& a1, const A2& a2)
-{
-	return Ptr<T>(new T(a1, a2));
-}
-template<typename T, typename A1, typename A2, typename A3>
-Ptr<T> makePtr(const A1& a1, const A2& a2, const A3& a3)
-{
-	return Ptr<T>(new T(a1, a2, a3));
-}
-template<typename T, typename A1, typename A2, typename A3, typename A4>
-Ptr<T> makePtr(const A1& a1, const A2& a2, const A3& a3, const A4& a4)
-{
-	return Ptr<T>(new T(a1, a2, a3, a4));
-}
-template<typename T, typename A1, typename A2, typename A3, typename A4, typename A5>
-Ptr<T> makePtr(const A1& a1, const A2& a2, const A3& a3, const A4& a4, const A5& a5)
-{
-	return Ptr<T>(new T(a1, a2, a3, a4, a5));
-}
-template<typename T, typename A1, typename A2, typename A3, typename A4, typename A5, typename A6>
-Ptr<T> makePtr(const A1& a1, const A2& a2, const A3& a3, const A4& a4, const A5& a5, const A6& a6)
-{
-	return Ptr<T>(new T(a1, a2, a3, a4, a5, a6));
-}
-template<typename T, typename A1, typename A2, typename A3, typename A4, typename A5, typename A6, typename A7>
-Ptr<T> makePtr(const A1& a1, const A2& a2, const A3& a3, const A4& a4, const A5& a5, const A6& a6, const A7& a7)
-{
-	return Ptr<T>(new T(a1, a2, a3, a4, a5, a6, a7));
-}
-template<typename T, typename A1, typename A2, typename A3, typename A4, typename A5, typename A6, typename A7, typename A8>
-Ptr<T> makePtr(const A1& a1, const A2& a2, const A3& a3, const A4& a4, const A5& a5, const A6& a6, const A7& a7, const A8& a8)
-{
-	return Ptr<T>(new T(a1, a2, a3, a4, a5, a6, a7, a8));
-}
-template<typename T, typename A1, typename A2, typename A3, typename A4, typename A5, typename A6, typename A7, typename A8, typename A9>
-Ptr<T> makePtr(const A1& a1, const A2& a2, const A3& a3, const A4& a4, const A5& a5, const A6& a6, const A7& a7, const A8& a8, const A9& a9)
-{
-	return Ptr<T>(new T(a1, a2, a3, a4, a5, a6, a7, a8, a9));
-}
-template<typename T, typename A1, typename A2, typename A3, typename A4, typename A5, typename A6, typename A7, typename A8, typename A9, typename A10>
-Ptr<T> makePtr(const A1& a1, const A2& a2, const A3& a3, const A4& a4, const A5& a5, const A6& a6, const A7& a7, const A8& a8, const A9& a9, const A10& a10)
-{
-	return Ptr<T>(new T(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10));
-}
-
-// property implementation macros
-#define CV_IMPL_PROPERTY_RO(type, name, member) \
-	inline type get##name() const { return member; }
-
-#define CV_HELP_IMPL_PROPERTY(r_type, w_type, name, member) \
-	CV_IMPL_PROPERTY_RO(r_type, name, member) \
-	inline void set##name(w_type val) { member = val; }
-
-#define CV_HELP_WRAP_PROPERTY(r_type, w_type, name, internal_name, internal_obj) \
-	r_type get##name() const { return internal_obj.get##internal_name(); } \
-	void set##name(w_type val) { internal_obj.set##internal_name(val); }
-
-#define CV_IMPL_PROPERTY(type, name, member) CV_HELP_IMPL_PROPERTY(type, type, name, member)
-#define CV_IMPL_PROPERTY_S(type, name, member) CV_HELP_IMPL_PROPERTY(type, const type &, name, member)
-
-#define CV_WRAP_PROPERTY(type, name, internal_name, internal_obj)  CV_HELP_WRAP_PROPERTY(type, type, name, internal_name, internal_obj)
-#define CV_WRAP_PROPERTY_S(type, name, internal_name, internal_obj) CV_HELP_WRAP_PROPERTY(type, const type &, name, internal_name, internal_obj)
-
-#define CV_WRAP_SAME_PROPERTY(type, name, internal_obj) CV_WRAP_PROPERTY(type, name, name, internal_obj)
-#define CV_WRAP_SAME_PROPERTY_S(type, name, internal_obj) CV_WRAP_PROPERTY_S(type, name, name, internal_obj)
-#endif
-
-//! copy every second source image element to the destination image
-inline void downsample2x(InputArray _src, OutputArray _dst)
-{
-	Mat src(_src.getMat());
-	#if 1
-	_dst.create((src.rows+1)/2, (src.cols+1)/2, src.type());
-	#else
-	if (_dst.empty()) {
-		// create a new matrix
-		_dst.create(src.rows/2, src.cols/2, src.type());
-	} else {
-		// overwrite elements in the existing matrix
-		ASSERT(src.rows > 0 && (unsigned)(src.rows-_dst.size().height*2) <= 1);
-		ASSERT(src.cols > 0 && (unsigned)(src.cols-_dst.size().width*2) <= 1);
-		ASSERT(src.type() == _dst.type());
-	}
-	#endif
-	Mat dst(_dst.getMat());
-	ASSERT(src.elemSize() == dst.elemSize());
-	switch (src.elemSize()) {
-	case 1:
-		for (int i=0; i<dst.rows; ++i)
-			for (int j=0; j<dst.cols; ++j)
-				dst.at<uint8_t>(i,j) = src.at<uint8_t>(2*i,2*j);
-		break;
-	case 2:
-		for (int i=0; i<dst.rows; ++i)
-			for (int j=0; j<dst.cols; ++j)
-				dst.at<uint16_t>(i,j) = src.at<uint16_t>(2*i,2*j);
-		break;
-	case 4:
-		for (int i=0; i<dst.rows; ++i)
-			for (int j=0; j<dst.cols; ++j)
-				dst.at<float>(i,j) = src.at<float>(2*i,2*j);
-		break;
-	case 8:
-		for (int i=0; i<dst.rows; ++i)
-			for (int j=0; j<dst.cols; ++j)
-				dst.at<double>(i,j) = src.at<double>(2*i,2*j);
-		break;
-	default:
-		for (int i=0; i<dst.rows; ++i)
-			for (int j=0; j<dst.cols; ++j)
-				memcpy(dst.ptr(i,j), src.ptr(2*i,2*j), src.elemSize());
-	}
-}
-//! copy elements of source image to the 2 x position in the destination image
-inline void upsample2x(InputArray _src, OutputArray _dst)
-{
-	Mat src(_src.getMat());
-	if (_dst.empty()) {
-		// create a new matrix
-		_dst.create(src.rows*2, src.cols*2, src.type());
-	} else {
-		// overwrite only new elements in the existing matrix
-		ASSERT(src.rows > 0 && src.rows*2-1 <= _dst.size().height);
-		ASSERT(src.cols > 0 && src.cols*2-1 <= _dst.size().width);
-		ASSERT(src.type() == _dst.type());
-	}
-	Mat dst(_dst.getMat());
-	ASSERT(src.elemSize() == dst.elemSize());
-	switch (src.elemSize()) {
-	case 1:
-		for (int i=0; i<src.rows; ++i)
-			for (int j=0; j<src.cols; ++j)
-				dst.at<uint8_t>(2*i,2*j) = src.at<uint8_t>(i,j);
-		break;
-	case 2:
-		for (int i=0; i<src.rows; ++i)
-			for (int j=0; j<src.cols; ++j)
-				dst.at<uint16_t>(2*i,2*j) = src.at<uint16_t>(i,j);
-		break;
-	case 4:
-		for (int i=0; i<src.rows; ++i)
-			for (int j=0; j<src.cols; ++j)
-				dst.at<float>(2*i,2*j) = src.at<float>(i,j);
-		break;
-	case 8:
-		for (int i=0; i<src.rows; ++i)
-			for (int j=0; j<src.cols; ++j)
-				dst.at<double>(2*i,2*j) = src.at<double>(i,j);
-		break;
-	default:
-		for (int i=0; i<src.rows; ++i)
-			for (int j=0; j<src.cols; ++j)
-				memcpy(dst.ptr(2*i,2*j), src.ptr(i,j), src.elemSize());
-	}
-}
-
-} // namespace cv
-
 // Informative template class for OpenCV "scalars"
 #define DEFINE_GENERIC_CVDATATYPE(tp,ctp) namespace cv { \
-template<> class DataType<tp> { \
+template<> class DataType< tp > { \
 public: \
 	typedef tp value_type; \
 	typedef value_type work_type; \
@@ -1427,11 +1463,11 @@ public: \
 #define DEFINE_CVDATATYPE(tp) DEFINE_GENERIC_CVDATATYPE(tp,tp::Type)
 
 #define DEFINE_GENERIC_CVDATADEPTH(tp,ctp) namespace cv { \
-template<> class DataDepth<tp> { \
+template<> class DataDepth< tp > { \
 public: \
 	enum { \
-		value = DataDepth<ctp>::value, \
-		fmt = DataDepth<ctp>::fmt \
+		value = DataDepth< ctp >::value, \
+		fmt = DataDepth< ctp >::fmt \
 	}; \
 }; }
 #define DEFINE_CVDATADEPTH(tp) DEFINE_GENERIC_CVDATADEPTH(tp,tp::Type)
@@ -1591,18 +1627,31 @@ inline bool TMatrix<TYPE,m,n>::IsEqual(const Base& rhs, TYPE eps) const
 	return true;
 }
 
-// calculate right null-vector of matrix A ([n,1])
+// calculate right null-Space of the matrix ([n,1])
+template <typename TYPE, int m, int n>
+inline TMatrix<TYPE,n,n-m> TMatrix<TYPE,m,n>::RightNullSpace(int flags /*= 0*/) const
+{
+	STATIC_ASSERT(n > m);
+	const cv::SVD svd(*this, flags|cv::SVD::FULL_UV);
+	// the orthonormal basis of the null space is formed by the columns
+	// of svd.vt such that the corresponding singular values are 0 (n - m or svd.vt.cols - svd.w.rows)
+	ASSERT(svd.vt.rows == n && svd.vt.rows == svd.vt.cols && svd.w.rows == m);
+	// return result (last rows transposed)
+	return svd.vt.rowRange(m,n).t();
+}
+// calculate right null-vector of the matrix ([n,1])
 template <typename TYPE, int m, int n>
 inline TMatrix<TYPE,n,1> TMatrix<TYPE,m,n>::RightNullVector(int flags /*= 0*/) const
 {
 	const cv::SVD svd(*this, (m >= n ? flags : flags|cv::SVD::FULL_UV));
 	// the singular values could be checked for numerical stability
 	// return result (last row transposed)
-	return *svd.vt.ptr< const TMatrix<TYPE,n,1> >(m-1);
+	ASSERT(svd.vt.rows == n);
+	return *svd.vt.ptr< const TMatrix<TYPE,n,1> >(n-1);
 }
-// calculate left null-vector of matrix A ([n,1])
+// calculate left null-vector of the matrix ([m,1])
 template <typename TYPE, int m, int n>
-inline TMatrix<TYPE,n,1> TMatrix<TYPE,m,n>::LeftNullVector(int flags /*= 0*/) const
+inline TMatrix<TYPE,m,1> TMatrix<TYPE,m,n>::LeftNullVector(int flags /*= 0*/) const
 {
 	return TMatrix<TYPE,m,n>(Base::t()).RightNullVector(flags);
 }
@@ -2505,6 +2554,63 @@ void TImage<TYPE>::DilateMean(TImage<TYPE>& dst, const TYPE& invalid) const
 template <typename TYPE>
 bool TImage<TYPE>::Load(const String& fileName)
 {
+	if (Util::getFileExt(fileName).ToLower() == ".pfm") {
+		if (Base::depth() != CV_32F)
+			return false;
+		File fImage(fileName, File::READ, File::OPEN);
+		if (!fImage.isOpen())
+			return false;
+		ASSERT(sizeof(float) == 4);
+		int i;
+		char buffer[128];
+		// check header
+		for (i=0; i<4; ++i) {
+			if (fImage.read(buffer+i, 1) != 1)
+				return false;
+			if (buffer[i] == '\n')
+				break;
+		}
+		if (buffer[0] != 'P' || buffer[1] != 'f' || buffer[i] != '\n')
+			return false;
+		// read resolution
+		int w, h;
+		for (i=0; i<127; ++i) {
+			if (fImage.read(buffer+i, 1) != 1)
+				return false;
+			if (buffer[i] == '\n')
+				break;
+		}
+		buffer[i] = 0;
+		if (sscanf(buffer, "%d %d", &w, &h) != 2)
+			return false;
+		// read number of channels
+		double sc;
+		for (i=0; i<127; ++i) {
+			if (fImage.read(buffer+i, 1) != 1)
+				return false;
+			if (buffer[i] == '\n')
+				break;
+		}
+		buffer[i] = 0;
+		if (sscanf(buffer, "%lf", &sc) != 1)
+			return false;
+		const bool bLittleEndian(sc < 0);
+		#if __BYTE_ORDER == __LITTLE_ENDIAN
+		ASSERT(bLittleEndian);
+		#else
+		ASSERT(!bLittleEndian);
+		#endif
+		const int nChannels(bLittleEndian ? -((int)sc) : (int)sc);
+		if (nChannels != Base::channels())
+			return false;
+		Base::create(h, w);
+		ASSERT(sizeof(float)*Base::channels() == Base::step.p[1]);
+		const size_t rowbytes((size_t)Base::size.p[1]*Base::step.p[1]);
+		for (int i=0; i<rows; ++i)
+			if (fImage.read(cv::Mat::template ptr<float>(i), rowbytes) != rowbytes)
+				return false;
+		return true;
+	}
 	cv::Mat img(cv::imread(fileName, CV_LOAD_IMAGE_UNCHANGED));
 	if (img.empty()) {
 		VERBOSE("error: loading image '%s'", fileName.c_str());
@@ -2831,13 +2937,6 @@ void BlurredImageAndDerivatives(const TImage<Type>& in, TImage<Type>& blurred, T
 	BlurredImageAndDerivatives(in, blurred, grad, sigma);
 	cv::merge(dir, 2, grad);
 }
-/*----------------------------------------------------------------*/
-
-
-// C L A S S  //////////////////////////////////////////////////////
-
-template <typename TYPE>
-const int TBitMatrix<TYPE>::numBitsShift = log2i<TBitMatrix::numBitsPerCell>();
 /*----------------------------------------------------------------*/
 
 
@@ -3253,6 +3352,10 @@ namespace boost {
 /*----------------------------------------------------------------*/
 
 // include headers that implement a archive in simple text and binary format or XML format
+#if defined(_MSC_VER)
+#pragma warning (push)
+#pragma warning (disable : 4715) // not all control paths return a value
+#endif
 #include <boost/archive/text_oarchive.hpp>
 #include <boost/archive/text_iarchive.hpp>
 #include <boost/archive/binary_oarchive.hpp>
@@ -3262,6 +3365,9 @@ namespace boost {
 // include headers that implement compressed serialization support
 #include <boost/iostreams/filtering_streambuf.hpp>
 #include <boost/iostreams/filter/zlib.hpp>
+#if defined(_MSC_VER)
+#pragma warning (pop)
+#endif
 
 enum ARCHIVE_TYPE {
 	ARCHIVE_TEXT = 0,
